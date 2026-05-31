@@ -3,20 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Litematic Hub API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: files
+    description: Litematic file operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +25,173 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /files:
+    get:
+      operationId: listFiles
+      tags: [files]
+      summary: List all files in the current session
+      parameters:
+        - name: sessionId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LitematicFile"
+
+  /files/upload:
+    post:
+      operationId: uploadFile
+      tags: [files]
+      summary: Upload a .litematic file and parse it
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadInput"
+      responses:
+        "201":
+          description: File uploaded and parsed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /files/{key}:
+    get:
+      operationId: getFile
+      tags: [files]
+      summary: Get file metadata by key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LitematicFile"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteFile
+      tags: [files]
+      summary: Delete a file by key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /files/{key}/download:
+    get:
+      operationId: downloadFile
+      tags: [files]
+      summary: Download original .litematic file
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Binary file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /info/{key}:
+    get:
+      operationId: getFileInfo
+      tags: [files]
+      summary: Get file name and total part count
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileInfo"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /part/{key}/{number}:
+    get:
+      operationId: getFilePart
+      tags: [files]
+      summary: Get a specific parsed part by 1-based index
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Part JSON (minified)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePart"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +202,150 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    ParseSettings:
+      type: object
+      properties:
+        maxCoordsPerPart:
+          type: integer
+          default: 1024
+        maxCharsPerPart:
+          type: integer
+          default: 20000
+        chunkMode:
+          type: string
+          enum: ["off", "1x1", "2x2", "3x3", "4x4"]
+          default: "off"
+        entityMode:
+          type: string
+          enum: ["off", "nbt", "eggs"]
+          default: "eggs"
+        blockEntityMode:
+          type: boolean
+          default: true
+        biomeMode:
+          type: boolean
+          default: false
+
+    UploadInput:
+      type: object
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          format: binary
+        sessionId:
+          type: string
+        maxCoordsPerPart:
+          type: integer
+        maxCharsPerPart:
+          type: integer
+        chunkMode:
+          type: string
+          enum: ["off", "1x1", "2x2", "3x3", "4x4"]
+        entityMode:
+          type: string
+          enum: ["off", "nbt", "eggs"]
+        blockEntityMode:
+          type: boolean
+        biomeMode:
+          type: boolean
+
+    UploadResult:
+      type: object
+      required:
+        - key
+        - name
+        - partCount
+        - sessionId
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        partCount:
+          type: integer
+        sessionId:
+          type: string
+        blockCount:
+          type: integer
+        entityCount:
+          type: integer
+        blockEntityCount:
+          type: integer
+        regionCount:
+          type: integer
+
+    LitematicFile:
+      type: object
+      required:
+        - key
+        - name
+        - partCount
+        - sessionId
+        - createdAt
+        - sizeBytes
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        partCount:
+          type: integer
+        sessionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        sizeBytes:
+          type: integer
+        blockCount:
+          type: integer
+        entityCount:
+          type: integer
+        blockEntityCount:
+          type: integer
+        regionCount:
+          type: integer
+        settings:
+          $ref: "#/components/schemas/ParseSettings"
+
+    FileInfo:
+      type: object
+      required:
+        - key
+        - name
+        - partCount
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        partCount:
+          type: integer
+
+    FilePart:
+      type: object
+      required:
+        - key
+        - number
+        - total
+        - data
+      properties:
+        key:
+          type: string
+        number:
+          type: integer
+        total:
+          type: integer
+        data:
+          type: string
+          description: Minified JSON string of the part payload

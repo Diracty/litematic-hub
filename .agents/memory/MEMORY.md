@@ -1,0 +1,1 @@
+- [Litematic Hub project](litematic-hub.md) — NBT parser quirks, dom-lib fix, storage design, and API layout for the litematic file hosting app.
