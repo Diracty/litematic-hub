@@ -38,7 +38,7 @@ export interface ParsedLitematic {
 type NbtTag = { type: string; value: unknown };
 type Coord3 = [number, number, number];
 
-// ── NBT helpers (ВОССТАНОВЛЕНЫ ВСЕ) ──────────────────────────────────────────
+// ── NBT helpers ──────────────────────────────────────────────────────────────
 
 function nbtVal(tag: NbtTag): unknown {
   if (!tag) return null;
@@ -114,7 +114,7 @@ function getLongArray(compound: Record<string, NbtTag>, key: string): [number, n
   return tag.value as [number, number][];
 }
 
-// ── Block state decoding (ИСПРАВЛЕН ТОЛЬКО ВНУТРЕННИЙ МЕХАНИЗМ) ──────────────
+// ── Block state decoding ──────────────────────────────────────────────────────
 
 function decodePaletteIndex(longs: [number, number][], blockIndex: number, bitsPerBlock: number): number {
   if (bitsPerBlock === 0) return 0;
@@ -130,6 +130,7 @@ function decodePaletteIndex(longs: [number, number][], blockIndex: number, bitsP
   if (startLongIdx === endLongIdx) {
     return Number((val1 >> bitOffset) & mask);
   } else {
+    // Решение проблемы "каши": склеиваем биты из двух разных Long
     const [h2, l2] = longs[endLongIdx] ?? [0, 0];
     const val2 = (BigInt(h2 >>> 0) << 32n) | BigInt(l2 >>> 0);
     const combined = (val1 >> bitOffset) | (val2 << (64n - bitOffset));
@@ -143,8 +144,8 @@ function blockStateId(name: string, properties: Record<string, NbtTag>): string 
   const propsStr = propEntries
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => {
-      // Фикс для 1.21.11: свойства-байты в логические строки
-      const val = v.type === "byte" ? (v.value === 1 ? "true" : "false") : v.value;
+      // ФИКС: Конвертация byte (0/1) в логические true/false для 1.21.11
+      const val = v.type === 'byte' ? (v.value === 1 ? 'true' : 'false') : v.value;
       return `${k}=${val}`;
     })
     .join(",");
@@ -153,7 +154,7 @@ function blockStateId(name: string, properties: Record<string, NbtTag>): string 
 
 const AIR_BLOCKS = new Set(["minecraft:air", "minecraft:cave_air", "minecraft:void_air"]);
 
-// ── Chunk grouping (ВОССТАНОВЛЕНО) ───────────────────────────────────────────
+// ── Chunk grouping ────────────────────────────────────────────────────────────
 
 function chunkGroupSize(mode: string): number {
   switch (mode) {
@@ -172,7 +173,7 @@ function chunkKey(x: number, z: number, groupSize: number): string {
   return `${Math.floor(cx / groupSize)},${Math.floor(cz / groupSize)}`;
 }
 
-// ── Entity helpers (ВОССТАНОВЛЕНО) ───────────────────────────────────────────
+// ── Entity helpers ────────────────────────────────────────────────────────────
 
 function entityTypeToSpawnEgg(entityId: string): string {
   const type = entityId.replace(/^minecraft:/, "");
@@ -201,13 +202,13 @@ function blockEntityValues(beNbt: Record<string, unknown>): Record<string, unkno
   return out;
 }
 
-// ── Part builder (ВОССТАНОВЛЕНО ПОЛНОСТЬЮ) ───────────────────────────────────
+// ── Part builder ─────────────────────────────────────────────────────────────
 
 class PartBuilder {
   private parts: string[] = [];
   private current: string[] = [];
   private currentCoords = 0;
-  private currentChars = 2;
+  private currentChars = 2; // 2 = "[]"
 
   constructor(private readonly maxCoords: number, private readonly maxChars: number) {}
 
@@ -220,7 +221,7 @@ class PartBuilder {
   }
 
   private tryAdd(entry: string, coords: number): boolean {
-    const sep = this.current.length > 0 ? 1 : 0;
+    const sep = this.current.length > 0 ? 1 : 0; // comma
     if (
       this.current.length > 0 &&
       (this.currentCoords + coords > this.maxCoords ||
@@ -234,6 +235,7 @@ class PartBuilder {
     return true;
   }
 
+  /** Add a block type, splitting its coords across parts as needed. */
   addBlockType(id: string, allCoords: Coord3[]): void {
     let offset = 0;
     while (offset < allCoords.length) {
@@ -261,6 +263,7 @@ class PartBuilder {
     }
   }
 
+  /** Flush blocks, then add entity/BE. */
   addLast(entry: string, coords: number): void {
     if (!this.tryAdd(entry, coords)) {
       this.flush();
@@ -280,7 +283,7 @@ class PartBuilder {
   }
 }
 
-// ── Main parser (ВОССТАНОВЛЕНО ПОЛНОСТЬЮ) ────────────────────────────────────
+// ── Main parser ───────────────────────────────────────────────────────────────
 
 export async function parseLitematic(
   buffer: Buffer,
@@ -346,15 +349,14 @@ export async function parseLitematic(
     }
 
     const blockStates = getLongArray(region, "BlockStates");
-    // КРИТИЧЕСКИЙ ФИКС: Litematica использует минимум 2 бита!
+    // ФИКС: Расчет бит для Litematica (минимум 2, компактная упаковка)
     const bitsPerBlock = palette.length <= 1 ? 0 : Math.max(2, Math.ceil(Math.log2(palette.length)));
 
     for (let i = 0; i < volume; i++) {
       const paletteIdx = decodePaletteIndex(blockStates, i, bitsPerBlock);
       const block = palette[paletteIdx];
       if (!block) continue;
-      const baseName = block.id.split("[")[0];
-      if (AIR_BLOCKS.has(baseName)) continue;
+      if (AIR_BLOCKS.has(block.id.split("[")[0])) continue;
 
       const ly = Math.floor(i / (absSizeX * absSizeZ));
       const rem = i % (absSizeX * absSizeZ);
@@ -428,7 +430,7 @@ export async function parseLitematic(
     const p = getCompound(reg, "Position"), s = getCompound(reg, "Size");
     const px = getInt(p, "x"), py = getInt(p, "y"), pz = getInt(p, "z");
     const sx = getInt(s, "x"), sy = getInt(s, "y"), sz = getInt(s, "z");
-    const x1 = px, x2 = px + sx + (sx > 0 ? -1 : 1);
+    const x1 = px, x2 = px + sx + (sx < 0 ? 1 : -1);
     const y1 = py, y2 = py + sy + (sy > 0 ? -1 : 1);
     const z1 = pz, z2 = pz + sz + (sz > 0 ? -1 : 1);
     minX = Math.min(minX, x1, x2); maxX = Math.max(maxX, x1, x2);
@@ -439,7 +441,8 @@ export async function parseLitematic(
   const builder = new PartBuilder(opts.maxCoordsPerPart, opts.maxCharsPerPart);
   if (opts.chunkMode !== "off") {
     for (const ck of Array.from(blocksByChunk.keys()).sort()) {
-      for (const [id, coords] of blocksByChunk.get(ck)!) builder.addBlockType(id, coords);
+      const cm = blocksByChunk.get(ck)!;
+      for (const [id, coords] of cm) builder.addBlockType(id, coords);
     }
   } else {
     for (const [id, coords] of blocksNoChunk) builder.addBlockType(id, coords);
