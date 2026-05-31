@@ -10,6 +10,18 @@ const ru = {
   homeTitle: "Панель управления",
   homeSubtitle: "Загружайте .litematic файлы и разбивайте их на JSON-части.",
 
+  // API Docs panel
+  docsTitle: "Как это работает",
+  docsFormatTitle: "Формат вывода",
+  docsFormatDesc: "После загрузки файл разбивается на пронумерованные части — JSON-массивы с записями трёх типов:",
+  docsTypeBlock: "block — один тип блока со списком всех его координат",
+  docsTypeBlockEntity: "blockEntity — блоки с данными (сундуки, печки и т.д.)",
+  docsTypeEntity: "entity — сущности (мобы, предметы). Всегда в конце.",
+  docsApiTitle: "Публичный API",
+  docsApiDesc: "Каждый файл доступен по уникальному ключу без авторизации:",
+  docsApiInfo: "Имя схематики и количество частей",
+  docsApiPart: "JSON-данные конкретной части (нумерация с 1)",
+
   // FileUpload
   uploadDropTitle: "Нажмите или перетащите .litematic файл",
   uploadDropSub: "До 50МБ",
@@ -96,8 +108,19 @@ const ru = {
 const en: typeof ru = {
   footerText: "Precision devtool for Minecraft builders.",
 
-  homeTitle: "Workshop Dashboard",
-  homeSubtitle: "Upload .litematic files to parse them into manageable JSON chunks.",
+  homeTitle: "Dashboard",
+  homeSubtitle: "Upload .litematic files and split them into numbered JSON parts.",
+
+  docsTitle: "How it works",
+  docsFormatTitle: "Output format",
+  docsFormatDesc: "After uploading, the file is split into numbered parts — JSON arrays with three entry types:",
+  docsTypeBlock: "block — one block type with all its coordinates",
+  docsTypeBlockEntity: "blockEntity — blocks with data (chests, furnaces, etc.)",
+  docsTypeEntity: "entity — mobs and items. Always last in every part.",
+  docsApiTitle: "Public API",
+  docsApiDesc: "Every file is accessible by its unique key, no auth required:",
+  docsApiInfo: "Schematic name and total part count",
+  docsApiPart: "JSON data for a specific part (1-based index)",
 
   uploadDropTitle: "Click or drag .litematic file here",
   uploadDropSub: "Up to 50MB",

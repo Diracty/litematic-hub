@@ -16,7 +16,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="container mx-auto px-4 h-16 flex items-center gap-4 max-w-6xl">
           <Link href="/" className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors">
             <Box className="w-6 h-6" />
-            <span className="font-bold tracking-tight text-foreground">Litematic Hub</span>
+            <span className="font-bold tracking-tight text-foreground">Litematic Parser</span>
           </Link>
           <div className="ml-auto">
             <Button
@@ -34,9 +34,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <main className="flex-1 container mx-auto px-4 py-8 max-w-6xl">
         {children}
       </main>
-      <footer className="py-6 border-t border-border/40 bg-card/20 text-center text-sm text-muted-foreground">
+      <footer className="py-4 border-t border-border/40 bg-card/20 text-center text-xs text-muted-foreground/50">
         <div className="container mx-auto px-4 max-w-6xl">
-          Litematic Hub &copy; {new Date().getFullYear()} — {t.footerText}
+          Litematic Parser &copy; {new Date().getFullYear()}
         </div>
       </footer>
     </div>
