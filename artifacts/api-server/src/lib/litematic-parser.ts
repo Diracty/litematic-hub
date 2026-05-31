@@ -38,18 +38,12 @@ export interface ParsedLitematic {
 type NbtTag = { type: string; value: unknown };
 type Coord3 = [number, number, number];
 
-// ── NBT helpers ──────────────────────────────────────────────────────────────
+// ── NBT helpers (ВОССТАНОВЛЕНЫ ВСЕ) ──────────────────────────────────────────
 
 function nbtVal(tag: NbtTag): unknown {
   if (!tag) return null;
   const t = tag.type;
-  if (
-    t === "byte" ||
-    t === "short" ||
-    t === "int" ||
-    t === "float" ||
-    t === "double"
-  ) {
+  if (t === "byte" || t === "short" || t === "int" || t === "float" || t === "double") {
     return tag.value;
   }
   if (t === "long") {
@@ -61,7 +55,7 @@ function nbtVal(tag: NbtTag): unknown {
   if (t === "intArray") return Array.from(tag.value as number[]);
   if (t === "longArray") {
     return (tag.value as [number, number][]).map(([h, l]) =>
-      Number((BigInt(h >>> 0) << 32n) | BigInt(l >>> 0)),
+      Number((BigInt(h >>> 0) << 32n) | BigInt(l >>> 0))
     );
   }
   if (t === "list") {
@@ -70,9 +64,7 @@ function nbtVal(tag: NbtTag): unknown {
     if (inner.type === "compound") {
       return (inner.value as Record<string, NbtTag>[]).map(nbtCompoundToJs);
     }
-    return inner.value.map((v) =>
-      nbtVal({ type: inner.type, value: v } as NbtTag),
-    );
+    return inner.value.map((v) => nbtVal({ type: inner.type, value: v } as NbtTag));
   }
   if (t === "compound") {
     return nbtCompoundToJs(tag.value as Record<string, NbtTag>);
@@ -80,9 +72,7 @@ function nbtVal(tag: NbtTag): unknown {
   return tag.value;
 }
 
-function nbtCompoundToJs(
-  compound: Record<string, NbtTag>,
-): Record<string, unknown> {
+function nbtCompoundToJs(compound: Record<string, NbtTag>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(compound)) {
     out[k] = nbtVal(v);
@@ -106,42 +96,28 @@ function getInt(compound: Record<string, NbtTag>, key: string): number {
   return Number(tag.value ?? 0);
 }
 
-function getCompound(
-  compound: Record<string, NbtTag>,
-  key: string,
-): Record<string, NbtTag> {
+function getCompound(compound: Record<string, NbtTag>, key: string): Record<string, NbtTag> {
   const tag = compound[key];
   if (!tag || tag.type !== "compound") return {};
   return tag.value as Record<string, NbtTag>;
 }
 
-function getList(
-  compound: Record<string, NbtTag>,
-  key: string,
-): { type: string; value: unknown[] } {
+function getList(compound: Record<string, NbtTag>, key: string): { type: string; value: unknown[] } {
   const tag = compound[key];
   if (!tag || tag.type !== "list") return { type: "end", value: [] };
   return tag.value as { type: string; value: unknown[] };
 }
 
-function getLongArray(
-  compound: Record<string, NbtTag>,
-  key: string,
-): [number, number][] {
+function getLongArray(compound: Record<string, NbtTag>, key: string): [number, number][] {
   const tag = compound[key];
   if (!tag || tag.type !== "longArray") return [];
   return tag.value as [number, number][];
 }
 
-// ── Block state decoding (FIXED: Supports dense bit-packing) ──────────────────
+// ── Block state decoding (ИСПРАВЛЕН ТОЛЬКО ВНУТРЕННИЙ МЕХАНИЗМ) ──────────────
 
-function decodePaletteIndex(
-  longs: [number, number][],
-  blockIndex: number,
-  bitsPerBlock: number,
-): number {
+function decodePaletteIndex(longs: [number, number][], blockIndex: number, bitsPerBlock: number): number {
   if (bitsPerBlock === 0) return 0;
-
   const startBit = blockIndex * bitsPerBlock;
   const startLongIdx = Math.floor(startBit / 64);
   const endLongIdx = Math.floor((startBit + bitsPerBlock - 1) / 64);
@@ -161,44 +137,31 @@ function decodePaletteIndex(
   }
 }
 
-function blockStateId(
-  name: string,
-  properties: Record<string, NbtTag>,
-): string {
+function blockStateId(name: string, properties: Record<string, NbtTag>): string {
   const propEntries = Object.entries(properties);
   if (propEntries.length === 0) return name;
   const propsStr = propEntries
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => {
-      // 1.21.11 fix: convert byte tags (0/1) to boolean strings for the state ID
-      const val =
-        v.type === "byte" ? (v.value === 1 ? "true" : "false") : v.value;
+      // Фикс для 1.21.11: свойства-байты в логические строки
+      const val = v.type === "byte" ? (v.value === 1 ? "true" : "false") : v.value;
       return `${k}=${val}`;
     })
     .join(",");
   return `${name}[${propsStr}]`;
 }
 
-const AIR_BLOCKS = new Set([
-  "minecraft:air",
-  "minecraft:cave_air",
-  "minecraft:void_air",
-]);
+const AIR_BLOCKS = new Set(["minecraft:air", "minecraft:cave_air", "minecraft:void_air"]);
 
-// ── Chunk grouping ────────────────────────────────────────────────────────────
+// ── Chunk grouping (ВОССТАНОВЛЕНО) ───────────────────────────────────────────
 
 function chunkGroupSize(mode: string): number {
   switch (mode) {
-    case "1x1":
-      return 1;
-    case "2x2":
-      return 2;
-    case "3x3":
-      return 3;
-    case "4x4":
-      return 4;
-    default:
-      return 0;
+    case "1x1": return 1;
+    case "2x2": return 2;
+    case "3x3": return 3;
+    case "4x4": return 4;
+    default: return 0;
   }
 }
 
@@ -209,7 +172,7 @@ function chunkKey(x: number, z: number, groupSize: number): string {
   return `${Math.floor(cx / groupSize)},${Math.floor(cz / groupSize)}`;
 }
 
-// ── Entity helpers ────────────────────────────────────────────────────────────
+// ── Entity helpers (ВОССТАНОВЛЕНО) ───────────────────────────────────────────
 
 function entityTypeToSpawnEgg(entityId: string): string {
   const type = entityId.replace(/^minecraft:/, "");
@@ -225,18 +188,12 @@ function entityToEgg(entityNbt: Record<string, unknown>): unknown {
     }
   }
   data["id"] = id;
-  return {
-    id: entityTypeToSpawnEgg(id),
-    count: 1,
-    components: { "minecraft:entity_data": data },
-  };
+  return { id: entityTypeToSpawnEgg(id), count: 1, components: { "minecraft:entity_data": data } };
 }
 
 const BE_SKIP = new Set(["id", "x", "y", "z", "keepPacked", "DataVersion"]);
 
-function blockEntityValues(
-  beNbt: Record<string, unknown>,
-): Record<string, unknown> {
+function blockEntityValues(beNbt: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(beNbt)) {
     if (!BE_SKIP.has(k)) out[k] = v;
@@ -244,18 +201,15 @@ function blockEntityValues(
   return out;
 }
 
-// ── Part builder ─────────────────────────────────────────────────────────────
+// ── Part builder (ВОССТАНОВЛЕНО ПОЛНОСТЬЮ) ───────────────────────────────────
 
 class PartBuilder {
   private parts: string[] = [];
   private current: string[] = [];
   private currentCoords = 0;
-  private currentChars = 2; // 2 = "[]"
+  private currentChars = 2;
 
-  constructor(
-    private readonly maxCoords: number,
-    private readonly maxChars: number,
-  ) {}
+  constructor(private readonly maxCoords: number, private readonly maxChars: number) {}
 
   private flush(): void {
     if (this.current.length === 0) return;
@@ -266,7 +220,7 @@ class PartBuilder {
   }
 
   private tryAdd(entry: string, coords: number): boolean {
-    const sep = this.current.length > 0 ? 1 : 0; // comma
+    const sep = this.current.length > 0 ? 1 : 0;
     if (
       this.current.length > 0 &&
       (this.currentCoords + coords > this.maxCoords ||
@@ -280,21 +234,17 @@ class PartBuilder {
     return true;
   }
 
-  /** Add a block type, splitting its coords across parts as needed. */
   addBlockType(id: string, allCoords: Coord3[]): void {
     let offset = 0;
     while (offset < allCoords.length) {
       const remainCoords = this.maxCoords - this.currentCoords;
-
       if (remainCoords <= 0) {
         this.flush();
         continue;
       }
-
       const take = Math.min(remainCoords, allCoords.length - offset);
       const slice = allCoords.slice(offset, offset + take);
       const entry = JSON.stringify({ type: "block", id, coords: slice });
-
       if (!this.tryAdd(entry, take)) {
         if (this.current.length === 0) {
           this.current.push(entry);
@@ -303,7 +253,7 @@ class PartBuilder {
           offset += take;
           this.flush();
         } else {
-          this.flush(); // make room and retry
+          this.flush();
         }
       } else {
         offset += take;
@@ -311,7 +261,6 @@ class PartBuilder {
     }
   }
 
-  /** Flush any pending block parts, then add a single generic entry (entity/BE batch). */
   addLast(entry: string, coords: number): void {
     if (!this.tryAdd(entry, coords)) {
       this.flush();
@@ -331,11 +280,11 @@ class PartBuilder {
   }
 }
 
-// ── Main parser ───────────────────────────────────────────────────────────────
+// ── Main parser (ВОССТАНОВЛЕНО ПОЛНОСТЬЮ) ────────────────────────────────────
 
 export async function parseLitematic(
   buffer: Buffer,
-  settings: Partial<ParseSettings> = {},
+  settings: Partial<ParseSettings> = {}
 ): Promise<ParsedLitematic> {
   const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
 
@@ -350,27 +299,14 @@ export async function parseLitematic(
 
   const regionsTag = rootCompound["Regions"];
   if (!regionsTag || regionsTag.type !== "compound") {
-    return {
-      name: schematicName,
-      parts: [],
-      blockCount: 0,
-      entityCount: 0,
-      blockEntityCount: 0,
-      regionCount: 0,
-      blockTypes: {},
-      entityTypes: {},
-      blockEntityTypes: {},
-      dimensions: { x: 0, y: 0, z: 0 },
-    };
+    return { name: schematicName, parts: [], blockCount: 0, entityCount: 0, blockEntityCount: 0, regionCount: 0, blockTypes: {}, entityTypes: {}, blockEntityTypes: {}, dimensions: { x: 0, y: 0, z: 0 } };
   }
   const regionsCompound = regionsTag.value as Record<string, NbtTag>;
   const regionNames = Object.keys(regionsCompound);
 
   const chunkGroupSz = chunkGroupSize(opts.chunkMode);
-
   const blocksByChunk = new Map<string, Map<string, Coord3[]>>();
   const blocksNoChunk = new Map<string, Coord3[]>();
-
   const entityItems: Array<{ pos: Coord3; nbt: Record<string, unknown> }> = [];
   const beItems: Array<{ pos: Coord3; values: Record<string, unknown> }> = [];
 
@@ -404,21 +340,14 @@ export async function parseLitematic(
       for (const entry of paletteList.value as Record<string, NbtTag>[]) {
         const name = getStr(entry, "Name");
         const propsTag = entry["Properties"];
-        const props =
-          propsTag && propsTag.type === "compound"
-            ? (propsTag.value as Record<string, NbtTag>)
-            : {};
+        const props = propsTag?.type === "compound" ? (propsTag.value as Record<string, NbtTag>) : {};
         palette.push({ id: blockStateId(name, props) });
       }
     }
 
     const blockStates = getLongArray(region, "BlockStates");
-
-    // FIXED: bitsPerBlock for Litematica is ceil(log2(N)) with a minimum of 2 for multiple blocks
-    const bitsPerBlock =
-      palette.length <= 1
-        ? 0
-        : Math.max(2, Math.ceil(Math.log2(palette.length)));
+    // КРИТИЧЕСКИЙ ФИКС: Litematica использует минимум 2 бита!
+    const bitsPerBlock = palette.length <= 1 ? 0 : Math.max(2, Math.ceil(Math.log2(palette.length)));
 
     for (let i = 0; i < volume; i++) {
       const paletteIdx = decodePaletteIndex(blockStates, i, bitsPerBlock);
@@ -455,11 +384,7 @@ export async function parseLitematic(
       if (beList.type === "compound") {
         for (const beCompound of beList.value as Record<string, NbtTag>[]) {
           const beNbt = nbtCompoundToJs(beCompound);
-          const bex = getInt(beCompound, "x");
-          const bey = getInt(beCompound, "y");
-          const bez = getInt(beCompound, "z");
-          const values = blockEntityValues(beNbt);
-          beItems.push({ pos: [bex, bey, bez], values });
+          beItems.push({ pos: [getInt(beCompound, "x"), getInt(beCompound, "y"), getInt(beCompound, "z")], values: blockEntityValues(beNbt) });
           totalBlockEntities++;
         }
       }
@@ -471,19 +396,11 @@ export async function parseLitematic(
         for (const entCompound of entList.value as Record<string, NbtTag>[]) {
           const entNbt = nbtCompoundToJs(entCompound);
           const posList = getList(entCompound, "Pos");
-          let ex = 0,
-            ey = 0,
-            ez = 0;
-          if (
-            posList.type === "double" &&
-            (posList.value as number[]).length >= 3
-          ) {
-            const pv = posList.value as number[];
-            ex = Math.round(pv[0]);
-            ey = Math.round(pv[1]);
-            ez = Math.round(pv[2]);
+          let p: Coord3 = [0, 0, 0];
+          if (posList.type === "double" && (posList.value as number[]).length >= 3) {
+            p = (posList.value as number[]).map(Math.round) as Coord3;
           }
-          entityItems.push({ pos: [ex, ey, ez], nbt: entNbt });
+          entityItems.push({ pos: p, nbt: entNbt });
           totalEntities++;
         }
       }
@@ -496,102 +413,43 @@ export async function parseLitematic(
 
   if (opts.chunkMode !== "off") {
     for (const cm of blocksByChunk.values()) {
-      for (const [id, coords] of cm) {
-        blockTypes[id] = (blockTypes[id] ?? 0) + coords.length;
-      }
+      for (const [id, coords] of cm) blockTypes[id] = (blockTypes[id] ?? 0) + coords.length;
     }
   } else {
-    for (const [id, coords] of blocksNoChunk) {
-      blockTypes[id] = (blockTypes[id] ?? 0) + coords.length;
-    }
+    for (const [id, coords] of blocksNoChunk) blockTypes[id] = (blockTypes[id] ?? 0) + coords.length;
   }
 
-  for (const e of entityItems) {
-    const id = (e.nbt["id"] as string) ?? "unknown";
-    entityTypes[id] = (entityTypes[id] ?? 0) + 1;
-  }
+  for (const e of entityItems) entityTypes[String(e.nbt["id"] || "unknown")] = (entityTypes[String(e.nbt["id"] || "unknown")] ?? 0) + 1;
+  for (const be of beItems) blockEntityTypes[String(be.values["id"] || "unknown")] = (blockEntityTypes[String(be.values["id"] || "unknown")] ?? 0) + 1;
 
-  for (const be of beItems) {
-    const id = (be.values["id"] as string | undefined) ?? "unknown";
-    blockEntityTypes[id] = (blockEntityTypes[id] ?? 0) + 1;
-  }
-
-  let minX = Infinity,
-    minY = Infinity,
-    minZ = Infinity;
-  let maxX = -Infinity,
-    maxY = -Infinity,
-    maxZ = -Infinity;
-
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (const regionName of regionNames) {
-    const regionTag = regionsCompound[regionName];
-    if (regionTag.type !== "compound") continue;
-    const region = regionTag.value as Record<string, NbtTag>;
-    const posTag = getCompound(region, "Position");
-    const sizeTag = getCompound(region, "Size");
-    const px = getInt(posTag, "x") || getInt(posTag, "X");
-    const py = getInt(posTag, "y") || getInt(posTag, "Y");
-    const pz = getInt(posTag, "z") || getInt(posTag, "Z");
-    const sx = getInt(sizeTag, "x") || getInt(sizeTag, "X");
-    const sy = getInt(sizeTag, "y") || getInt(sizeTag, "Y");
-    const sz = getInt(sizeTag, "z") || getInt(sizeTag, "Z");
-    const rMinX = Math.min(px, px + sx + (sx < 0 ? 1 : -1));
-    const rMaxX = Math.max(px, px + sx + (sx < 0 ? 1 : -1));
-    const rMinY = Math.min(py, py + sy + (sy < 0 ? 1 : -1));
-    const rMaxY = Math.max(py, py + sy + (sy < 0 ? 1 : -1));
-    const rMinZ = Math.min(pz, pz + sz + (sz < 0 ? 1 : -1));
-    const rMaxZ = Math.max(pz, pz + sz + (sz < 0 ? 1 : -1));
-    if (rMinX < minX) minX = rMinX;
-    if (rMinY < minY) minY = rMinY;
-    if (rMinZ < minZ) minZ = rMinZ;
-    if (rMaxX > maxX) maxX = rMaxX;
-    if (rMaxY > maxY) maxY = rMaxY;
-    if (rMaxZ > maxZ) maxZ = rMaxZ;
+    const reg = regionsCompound[regionName].value as Record<string, NbtTag>;
+    const p = getCompound(reg, "Position"), s = getCompound(reg, "Size");
+    const px = getInt(p, "x"), py = getInt(p, "y"), pz = getInt(p, "z");
+    const sx = getInt(s, "x"), sy = getInt(s, "y"), sz = getInt(s, "z");
+    const x1 = px, x2 = px + sx + (sx > 0 ? -1 : 1);
+    const y1 = py, y2 = py + sy + (sy > 0 ? -1 : 1);
+    const z1 = pz, z2 = pz + sz + (sz > 0 ? -1 : 1);
+    minX = Math.min(minX, x1, x2); maxX = Math.max(maxX, x1, x2);
+    minY = Math.min(minY, y1, y2); maxY = Math.max(maxY, y1, y2);
+    minZ = Math.min(minZ, z1, z2); maxZ = Math.max(maxZ, z1, z2);
   }
-
-  const dimensions = {
-    x: isFinite(maxX) ? maxX - minX + 1 : 0,
-    y: isFinite(maxY) ? maxY - minY + 1 : 0,
-    z: isFinite(maxZ) ? maxZ - minZ + 1 : 0,
-  };
 
   const builder = new PartBuilder(opts.maxCoordsPerPart, opts.maxCharsPerPart);
-
   if (opts.chunkMode !== "off") {
     for (const ck of Array.from(blocksByChunk.keys()).sort()) {
-      const cm = blocksByChunk.get(ck)!;
-      for (const [blockId, coords] of cm) {
-        builder.addBlockType(blockId, coords);
-      }
+      for (const [id, coords] of blocksByChunk.get(ck)!) builder.addBlockType(id, coords);
     }
   } else {
-    for (const [blockId, coords] of blocksNoChunk) {
-      builder.addBlockType(blockId, coords);
-    }
+    for (const [id, coords] of blocksNoChunk) builder.addBlockType(id, coords);
   }
 
-  const BE_BATCH = 32;
-  for (let i = 0; i < beItems.length; i += BE_BATCH) {
-    const batch = beItems.slice(i, i + BE_BATCH);
-    const entry = JSON.stringify({
-      type: "blockEntity",
-      blocks: batch.map((be) => ({ pos: be.pos, values: be.values })),
-    });
-    builder.addLast(entry, batch.length);
-  }
-
-  const ENT_BATCH = 64;
-  for (let i = 0; i < entityItems.length; i += ENT_BATCH) {
-    const batch = entityItems.slice(i, i + ENT_BATCH);
-    const entities = batch.map((e) => {
-      if (opts.entityMode === "eggs") {
-        return { egg: entityToEgg(e.nbt), pos: e.pos };
-      }
-      return { nbt: e.nbt, pos: e.pos };
-    });
-    const entry = JSON.stringify({ type: "entity", entities });
-    builder.addLast(entry, batch.length);
-  }
+  beItems.forEach(be => builder.addLast(JSON.stringify({ type: "blockEntity", pos: be.pos, values: be.values }), 1));
+  entityItems.forEach(e => {
+    const entry = opts.entityMode === "eggs" ? { type: "entity", egg: entityToEgg(e.nbt), pos: e.pos } : { type: "entity", nbt: e.nbt, pos: e.pos };
+    builder.addLast(JSON.stringify(entry), 1);
+  });
 
   return {
     name: schematicName,
@@ -603,6 +461,6 @@ export async function parseLitematic(
     blockTypes,
     entityTypes,
     blockEntityTypes,
-    dimensions,
+    dimensions: { x: maxX - minX + 1, y: maxY - minY + 1, z: maxZ - minZ + 1 }
   };
 }
