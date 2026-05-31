@@ -52,13 +52,31 @@ const ru = {
   toastDeleteFailTitle: "Ошибка удаления",
   toastDeleteFailDesc: "Не удалось удалить файл.",
 
-  // FileDetail
+  // FileDetail — stats
   btnBack: "Назад",
   btnDownloadParsed: "Скачать распарсенный",
   labelBlocksDetail: "Блоки",
   labelEntities: "Сущности",
   labelBlockEntities: "Блоки-сущности",
   labelRegions: "Регионы",
+  labelDimensions: "Размер схематики",
+
+  // FileDetail — tabs
+  tabContents: "Содержимое",
+  tabParts: "Части",
+
+  // FileDetail — contents viewer
+  contentsBlocks: "Блоки",
+  contentsEntities: "Сущности",
+  contentsBlockEntities: "Блоки-сущности",
+  contentsEmpty: "Нет данных.",
+  contentsTotal: "всего",
+  contentsDimX: "X",
+  contentsDimY: "Y",
+  contentsDimZ: "Z",
+  contentsDimLabel: "Размер (X × Y × Z)",
+
+  // FileDetail — parts viewer
   partsListTitle: "Части",
   viewerTitle: "Просмотр",
   viewerEmpty: "Выберите часть из списка для просмотра JSON.",
@@ -127,6 +145,21 @@ const en: typeof ru = {
   labelEntities: "Entities",
   labelBlockEntities: "Block Entities",
   labelRegions: "Regions",
+  labelDimensions: "Schematic Size",
+
+  tabContents: "Contents",
+  tabParts: "Parts",
+
+  contentsBlocks: "Blocks",
+  contentsEntities: "Entities",
+  contentsBlockEntities: "Block Entities",
+  contentsEmpty: "No data.",
+  contentsTotal: "total",
+  contentsDimX: "X",
+  contentsDimY: "Y",
+  contentsDimZ: "Z",
+  contentsDimLabel: "Size (X × Y × Z)",
+
   partsListTitle: "Parts",
   viewerTitle: "Viewer",
   viewerEmpty: "Select a part from the list to view its JSON payload.",

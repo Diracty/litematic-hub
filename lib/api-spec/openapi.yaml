@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: Litematic Hub API
@@ -9,9 +8,7 @@ servers:
     description: Base API path
 tags:
   - name: health
-    description: Health operations
   - name: files
-    description: Litematic file operations
 paths:
   /healthz:
     get:
@@ -114,7 +111,7 @@ paths:
     get:
       operationId: downloadFile
       tags: [files]
-      summary: Download original .litematic file
+      summary: Download parsed parts as text
       parameters:
         - name: key
           in: path
@@ -180,7 +177,7 @@ paths:
             minimum: 1
       responses:
         "200":
-          description: Part JSON (minified)
+          description: Part JSON
           content:
             application/json:
               schema:
@@ -209,6 +206,26 @@ components:
           type: string
       required:
         - error
+
+    TypeCounts:
+      type: object
+      description: Map of type identifier to count
+      additionalProperties:
+        type: integer
+
+    SchemaDimensions:
+      type: object
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
+        z:
+          type: integer
+      required:
+        - x
+        - y
+        - z
 
     ParseSettings:
       type: object
@@ -315,6 +332,14 @@ components:
           type: integer
         regionCount:
           type: integer
+        blockTypes:
+          $ref: "#/components/schemas/TypeCounts"
+        entityTypes:
+          $ref: "#/components/schemas/TypeCounts"
+        blockEntityTypes:
+          $ref: "#/components/schemas/TypeCounts"
+        dimensions:
+          $ref: "#/components/schemas/SchemaDimensions"
         settings:
           $ref: "#/components/schemas/ParseSettings"
 
@@ -348,4 +373,4 @@ components:
           type: integer
         data:
           type: string
-          description: Minified JSON string of the part payload
+          description: Minified JSON array string of part items

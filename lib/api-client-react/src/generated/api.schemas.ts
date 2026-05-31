@@ -13,6 +13,17 @@ export interface ApiError {
   error: string;
 }
 
+/**
+ * Map of type identifier to count
+ */
+export interface TypeCounts {[key: string]: number}
+
+export interface SchemaDimensions {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export type ParseSettingsChunkMode = typeof ParseSettingsChunkMode[keyof typeof ParseSettingsChunkMode];
 
 
@@ -95,6 +106,10 @@ export interface LitematicFile {
   entityCount?: number;
   blockEntityCount?: number;
   regionCount?: number;
+  blockTypes?: TypeCounts;
+  entityTypes?: TypeCounts;
+  blockEntityTypes?: TypeCounts;
+  dimensions?: SchemaDimensions;
   settings?: ParseSettings;
 }
 
@@ -108,7 +123,7 @@ export interface FilePart {
   key: string;
   number: number;
   total: number;
-  /** Minified JSON string of the part payload */
+  /** Minified JSON array string of part items */
   data: string;
 }
 

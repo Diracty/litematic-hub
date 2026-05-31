@@ -44,6 +44,10 @@ router.get("/files", async (req, res) => {
       entityCount: r.entityCount,
       blockEntityCount: r.blockEntityCount,
       regionCount: r.regionCount,
+      blockTypes: r.blockTypes ?? {},
+      entityTypes: r.entityTypes ?? {},
+      blockEntityTypes: r.blockEntityTypes ?? {},
+      dimensions: { x: r.dimensionsX ?? 0, y: r.dimensionsY ?? 0, z: r.dimensionsZ ?? 0 },
       settings: r.settings,
     }));
     res.json(result);
@@ -86,6 +90,12 @@ router.post("/files/upload", upload.single("file"), async (req, res) => {
       entityCount: parsed.entityCount,
       blockEntityCount: parsed.blockEntityCount,
       regionCount: parsed.regionCount,
+      blockTypes: parsed.blockTypes,
+      entityTypes: parsed.entityTypes,
+      blockEntityTypes: parsed.blockEntityTypes,
+      dimensionsX: parsed.dimensions.x,
+      dimensionsY: parsed.dimensions.y,
+      dimensionsZ: parsed.dimensions.z,
       settings: mergedSettings,
     });
 
@@ -142,6 +152,10 @@ router.get("/files/:key", async (req, res) => {
       entityCount: row.entityCount,
       blockEntityCount: row.blockEntityCount,
       regionCount: row.regionCount,
+      blockTypes: row.blockTypes ?? {},
+      entityTypes: row.entityTypes ?? {},
+      blockEntityTypes: row.blockEntityTypes ?? {},
+      dimensions: { x: row.dimensionsX ?? 0, y: row.dimensionsY ?? 0, z: row.dimensionsZ ?? 0 },
       settings: row.settings,
     });
   } catch (err) {

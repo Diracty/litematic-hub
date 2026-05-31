@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ParseSettings } from './parseSettings';
+import type { SchemaDimensions } from './schemaDimensions';
+import type { TypeCounts } from './typeCounts';
 
 export interface LitematicFile {
   key: string;
@@ -18,5 +20,9 @@ export interface LitematicFile {
   entityCount?: number;
   blockEntityCount?: number;
   regionCount?: number;
+  blockTypes?: TypeCounts;
+  entityTypes?: TypeCounts;
+  blockEntityTypes?: TypeCounts;
+  dimensions?: SchemaDimensions;
   settings?: ParseSettings;
 }

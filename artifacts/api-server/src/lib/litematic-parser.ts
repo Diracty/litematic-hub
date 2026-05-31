@@ -29,6 +29,10 @@ export interface ParsedLitematic {
   entityCount: number;
   blockEntityCount: number;
   regionCount: number;
+  blockTypes: Record<string, number>;
+  entityTypes: Record<string, number>;
+  blockEntityTypes: Record<string, number>;
+  dimensions: { x: number; y: number; z: number };
 }
 
 type NbtTag = { type: string; value: unknown };
@@ -415,6 +419,69 @@ export async function parseLitematic(
     }
   }
 
+  // ── Compute per-type counts ───────────────────────────────────────────────
+  const blockTypes: Record<string, number> = {};
+  const entityTypes: Record<string, number> = {};
+  const blockEntityTypes: Record<string, number> = {};
+
+  if (opts.chunkMode !== "off") {
+    for (const cm of blocksByChunk.values()) {
+      for (const [id, coords] of cm) {
+        blockTypes[id] = (blockTypes[id] ?? 0) + coords.length;
+      }
+    }
+  } else {
+    for (const [id, coords] of blocksNoChunk) {
+      blockTypes[id] = (blockTypes[id] ?? 0) + coords.length;
+    }
+  }
+
+  for (const e of entityItems) {
+    const id = (e.nbt["id"] as string) ?? "unknown";
+    entityTypes[id] = (entityTypes[id] ?? 0) + 1;
+  }
+
+  for (const be of beItems) {
+    const id = (be.values["id"] as string | undefined) ?? "unknown";
+    blockEntityTypes[id] = (blockEntityTypes[id] ?? 0) + 1;
+  }
+
+  // ── Compute bounding-box dimensions ──────────────────────────────────────
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+  for (const regionName of regionNames) {
+    const regionTag = regionsCompound[regionName];
+    if (regionTag.type !== "compound") continue;
+    const region = regionTag.value as Record<string, NbtTag>;
+    const posTag = getCompound(region, "Position");
+    const sizeTag = getCompound(region, "Size");
+    const px = getInt(posTag, "x") || getInt(posTag, "X");
+    const py = getInt(posTag, "y") || getInt(posTag, "Y");
+    const pz = getInt(posTag, "z") || getInt(posTag, "Z");
+    const sx = getInt(sizeTag, "x") || getInt(sizeTag, "X");
+    const sy = getInt(sizeTag, "y") || getInt(sizeTag, "Y");
+    const sz = getInt(sizeTag, "z") || getInt(sizeTag, "Z");
+    const rMinX = Math.min(px, px + sx + (sx < 0 ? 1 : -1));
+    const rMaxX = Math.max(px, px + sx + (sx < 0 ? 1 : -1));
+    const rMinY = Math.min(py, py + sy + (sy < 0 ? 1 : -1));
+    const rMaxY = Math.max(py, py + sy + (sy < 0 ? 1 : -1));
+    const rMinZ = Math.min(pz, pz + sz + (sz < 0 ? 1 : -1));
+    const rMaxZ = Math.max(pz, pz + sz + (sz < 0 ? 1 : -1));
+    if (rMinX < minX) minX = rMinX;
+    if (rMinY < minY) minY = rMinY;
+    if (rMinZ < minZ) minZ = rMinZ;
+    if (rMaxX > maxX) maxX = rMaxX;
+    if (rMaxY > maxY) maxY = rMaxY;
+    if (rMaxZ > maxZ) maxZ = rMaxZ;
+  }
+
+  const dimensions = {
+    x: isFinite(maxX) ? maxX - minX + 1 : 0,
+    y: isFinite(maxY) ? maxY - minY + 1 : 0,
+    z: isFinite(maxZ) ? maxZ - minZ + 1 : 0,
+  };
+
   // ── Build parts ─────────────────────────────────────────────────────────────
   // Order: blocks → block entities → entities (entities ALWAYS last)
 
@@ -467,5 +534,9 @@ export async function parseLitematic(
     entityCount: totalEntities,
     blockEntityCount: totalBlockEntities,
     regionCount: regionNames.length,
+    blockTypes,
+    entityTypes,
+    blockEntityTypes,
+    dimensions,
   };
 }

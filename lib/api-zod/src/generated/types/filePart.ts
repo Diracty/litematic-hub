@@ -10,6 +10,6 @@ export interface FilePart {
   key: string;
   number: number;
   total: number;
-  /** Minified JSON string of the part payload */
+  /** Minified JSON array string of part items */
   data: string;
 }

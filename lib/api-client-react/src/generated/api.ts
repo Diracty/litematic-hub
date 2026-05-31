@@ -453,7 +453,7 @@ export const getDownloadFileUrl = (key: string,) => {
 }
 
 /**
- * @summary Download original .litematic file
+ * @summary Download parsed parts as text
  */
 export const downloadFile = async (key: string, options?: RequestInit): Promise<Blob> => {
 
@@ -500,7 +500,7 @@ export type DownloadFileQueryError = ErrorType<ApiError>
 
 
 /**
- * @summary Download original .litematic file
+ * @summary Download parsed parts as text
  */
 
 export function useDownloadFile<TData = Awaited<ReturnType<typeof downloadFile>>, TError = ErrorType<ApiError>>(

@@ -41,6 +41,14 @@ export const ListFilesResponseItem = zod.object({
   "entityCount": zod.number().optional(),
   "blockEntityCount": zod.number().optional(),
   "regionCount": zod.number().optional(),
+  "blockTypes": zod.record(zod.string(), zod.number()).optional().describe('Map of type identifier to count'),
+  "entityTypes": zod.record(zod.string(), zod.number()).optional().describe('Map of type identifier to count'),
+  "blockEntityTypes": zod.record(zod.string(), zod.number()).optional().describe('Map of type identifier to count'),
+  "dimensions": zod.object({
+  "x": zod.number(),
+  "y": zod.number(),
+  "z": zod.number()
+}).optional(),
   "settings": zod.object({
   "maxCoordsPerPart": zod.number().default(listFilesResponseSettingsMaxCoordsPerPartDefault),
   "maxCharsPerPart": zod.number().default(listFilesResponseSettingsMaxCharsPerPartDefault),
@@ -93,6 +101,14 @@ export const GetFileResponse = zod.object({
   "entityCount": zod.number().optional(),
   "blockEntityCount": zod.number().optional(),
   "regionCount": zod.number().optional(),
+  "blockTypes": zod.record(zod.string(), zod.number()).optional().describe('Map of type identifier to count'),
+  "entityTypes": zod.record(zod.string(), zod.number()).optional().describe('Map of type identifier to count'),
+  "blockEntityTypes": zod.record(zod.string(), zod.number()).optional().describe('Map of type identifier to count'),
+  "dimensions": zod.object({
+  "x": zod.number(),
+  "y": zod.number(),
+  "z": zod.number()
+}).optional(),
   "settings": zod.object({
   "maxCoordsPerPart": zod.number().default(getFileResponseSettingsMaxCoordsPerPartDefault),
   "maxCharsPerPart": zod.number().default(getFileResponseSettingsMaxCharsPerPartDefault),
@@ -113,7 +129,7 @@ export const DeleteFileParams = zod.object({
 
 
 /**
- * @summary Download original .litematic file
+ * @summary Download parsed parts as text
  */
 export const DownloadFileParams = zod.object({
   "key": zod.coerce.string()
@@ -149,7 +165,7 @@ export const GetFilePartResponse = zod.object({
   "key": zod.string(),
   "number": zod.number(),
   "total": zod.number(),
-  "data": zod.string().describe('Minified JSON string of the part payload')
+  "data": zod.string().describe('Minified JSON array string of part items')
 })
 
 

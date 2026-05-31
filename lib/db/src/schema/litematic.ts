@@ -14,6 +14,12 @@ export const litematicFilesTable = pgTable("litematic_files", {
   entityCount: integer("entity_count").notNull().default(0),
   blockEntityCount: integer("block_entity_count").notNull().default(0),
   regionCount: integer("region_count").notNull().default(0),
+  blockTypes: jsonb("block_types").default({}),
+  entityTypes: jsonb("entity_types").default({}),
+  blockEntityTypes: jsonb("block_entity_types").default({}),
+  dimensionsX: integer("dimensions_x").default(0),
+  dimensionsY: integer("dimensions_y").default(0),
+  dimensionsZ: integer("dimensions_z").default(0),
   settings: jsonb("settings").notNull().default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [

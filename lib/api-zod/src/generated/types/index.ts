@@ -15,6 +15,8 @@ export * from './litematicFile';
 export * from './parseSettings';
 export * from './parseSettingsChunkMode';
 export * from './parseSettingsEntityMode';
+export * from './schemaDimensions';
+export * from './typeCounts';
 export * from './uploadInput';
 export * from './uploadInputChunkMode';
 export * from './uploadInputEntityMode';
