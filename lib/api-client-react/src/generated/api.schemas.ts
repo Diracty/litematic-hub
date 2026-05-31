@@ -119,12 +119,24 @@ export interface FileInfo {
   partCount: number;
 }
 
+export type FilePartDataItemBlocksItem = { [key: string]: unknown };
+
+export type FilePartDataItemEntitiesItem = { [key: string]: unknown };
+
+export type FilePartDataItem = {
+  type: string;
+  id?: string;
+  coords?: number[][];
+  blocks?: FilePartDataItemBlocksItem[];
+  entities?: FilePartDataItemEntitiesItem[];
+};
+
 export interface FilePart {
   key: string;
   number: number;
   total: number;
-  /** Minified JSON array string of part items */
-  data: string;
+  /** Array of part entry objects */
+  data: FilePartDataItem[];
 }
 
 export type ListFilesParams = {

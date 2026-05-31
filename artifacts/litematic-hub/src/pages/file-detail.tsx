@@ -61,7 +61,7 @@ export default function FileDetail() {
 
   const handleCopyPart = () => {
     if (partData) {
-      navigator.clipboard.writeText(partData.data);
+      navigator.clipboard.writeText(JSON.stringify(partData.data));
       toast({ title: t.toastCopiedTitle, description: t.toastCopiedDesc });
     }
   };
@@ -146,7 +146,7 @@ export default function FileDetail() {
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       {t.partDataTitle} #{selectedPart}
                       <span className="text-xs text-muted-foreground font-mono font-normal ml-2">
-                        {partData ? `${partData.data.length.toLocaleString()} ${t.partChars}` : ""}
+                        {partData ? `${JSON.stringify(partData.data).length.toLocaleString()} ${t.partChars}` : ""}
                       </span>
                     </CardTitle>
                     <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={handleCopyPart} disabled={!partData} data-testid="btn-copy-part-data">
@@ -173,8 +173,8 @@ export default function FileDetail() {
                 ) : partData ? (
                   <ScrollArea className="h-full w-full">
                     <pre className="p-4 text-xs font-mono text-[#a6accd] break-all whitespace-pre-wrap selection:bg-primary/40 leading-relaxed" data-testid="part-data-viewer">
-                      {partData.data}
-                    </pre>
+                    {JSON.stringify(partData.data, null, 2)}
+                  </pre>
                   </ScrollArea>
                 ) : null}
               </div>

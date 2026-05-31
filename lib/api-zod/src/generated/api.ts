@@ -165,7 +165,17 @@ export const GetFilePartResponse = zod.object({
   "key": zod.string(),
   "number": zod.number(),
   "total": zod.number(),
-  "data": zod.string().describe('Minified JSON array string of part items')
+  "data": zod.array(zod.object({
+  "type": zod.string(),
+  "id": zod.string().optional(),
+  "coords": zod.array(zod.array(zod.number())).optional(),
+  "blocks": zod.array(zod.object({
+
+}).passthrough()).optional(),
+  "entities": zod.array(zod.object({
+
+}).passthrough()).optional()
+})).describe('Array of part entry objects')
 })
 
 

@@ -71,7 +71,7 @@ router.get("/part/:key/:number", async (req, res) => {
       key,
       number: num,
       total: fileRow.partCount,
-      data: partRow.data,
+      data: JSON.parse(partRow.data),
     });
   } catch (err) {
     req.log.error({ err }, "getFilePart error");

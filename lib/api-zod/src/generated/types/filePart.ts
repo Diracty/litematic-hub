@@ -5,11 +5,12 @@
  * Litematic Hub API
  * OpenAPI spec version: 0.1.0
  */
+import type { FilePartDataItem } from './filePartDataItem';
 
 export interface FilePart {
   key: string;
   number: number;
   total: number;
-  /** Minified JSON array string of part items */
-  data: string;
+  /** Array of part entry objects */
+  data: FilePartDataItem[];
 }

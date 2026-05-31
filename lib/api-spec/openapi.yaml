@@ -372,5 +372,28 @@ components:
         total:
           type: integer
         data:
-          type: string
-          description: Minified JSON array string of part items
+          type: array
+          description: Array of part entry objects
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              id:
+                type: string
+              coords:
+                type: array
+                items:
+                  type: array
+                  items:
+                    type: integer
+              blocks:
+                type: array
+                items:
+                  type: object
+              entities:
+                type: array
+                items:
+                  type: object
+            required:
+              - type
