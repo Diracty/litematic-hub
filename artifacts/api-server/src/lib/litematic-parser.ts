@@ -32,6 +32,9 @@ export interface ParsedLitematic {
 }
 
 type NbtTag = { type: string; value: unknown };
+type Coord3 = [number, number, number];
+
+// ── NBT helpers ──────────────────────────────────────────────────────────────
 
 function nbtVal(tag: NbtTag): unknown {
   if (!tag) return null;
@@ -44,17 +47,12 @@ function nbtVal(tag: NbtTag): unknown {
     return Number((BigInt(high >>> 0) << 32n) | BigInt(low >>> 0));
   }
   if (t === "string") return tag.value;
-  if (t === "byteArray") {
-    const buf = tag.value as Buffer | number[];
-    return Array.from(buf as number[]);
-  }
-  if (t === "intArray") {
-    const arr = tag.value as Int32Array | number[];
-    return Array.from(arr as number[]);
-  }
+  if (t === "byteArray") return Array.from(tag.value as number[]);
+  if (t === "intArray") return Array.from(tag.value as number[]);
   if (t === "longArray") {
-    const arr = tag.value as [number, number][];
-    return arr.map(([h, l]) => Number((BigInt(h >>> 0) << 32n) | BigInt(l >>> 0)));
+    return (tag.value as [number, number][]).map(([h, l]) =>
+      Number((BigInt(h >>> 0) << 32n) | BigInt(l >>> 0))
+    );
   }
   if (t === "list") {
     const inner = tag.value as { type: string; value: unknown[] };
@@ -112,11 +110,9 @@ function getLongArray(compound: Record<string, NbtTag>, key: string): [number, n
   return tag.value as [number, number][];
 }
 
-function decodePaletteIndex(
-  longs: [number, number][],
-  blockIndex: number,
-  bitsPerBlock: number
-): number {
+// ── Block state decoding ──────────────────────────────────────────────────────
+
+function decodePaletteIndex(longs: [number, number][], blockIndex: number, bitsPerBlock: number): number {
   const blocksPerLong = Math.floor(64 / bitsPerBlock);
   const longIdx = Math.floor(blockIndex / blocksPerLong);
   const bitOffset = (blockIndex % blocksPerLong) * bitsPerBlock;
@@ -136,11 +132,9 @@ function blockStateId(name: string, properties: Record<string, NbtTag>): string 
   return `${name}[${propsStr}]`;
 }
 
-const AIR_BLOCKS = new Set([
-  "minecraft:air",
-  "minecraft:cave_air",
-  "minecraft:void_air",
-]);
+const AIR_BLOCKS = new Set(["minecraft:air", "minecraft:cave_air", "minecraft:void_air"]);
+
+// ── Chunk grouping ────────────────────────────────────────────────────────────
 
 function chunkGroupSize(mode: string): number {
   switch (mode) {
@@ -159,73 +153,115 @@ function chunkKey(x: number, z: number, groupSize: number): string {
   return `${Math.floor(cx / groupSize)},${Math.floor(cz / groupSize)}`;
 }
 
+// ── Entity helpers ────────────────────────────────────────────────────────────
+
 function entityTypeToSpawnEgg(entityId: string): string {
-  const type = entityId.replace("minecraft:", "");
+  const type = entityId.replace(/^minecraft:/, "");
   return `minecraft:${type}_spawn_egg`;
 }
 
 function entityToEgg(entityNbt: Record<string, unknown>): unknown {
-  const id = entityNbt["id"] as string ?? "minecraft:pig";
-  const cleanNbt: Record<string, unknown> = {};
+  const id = (entityNbt["id"] as string) ?? "minecraft:pig";
+  const data: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(entityNbt)) {
-    if (k !== "Pos" && k !== "Motion" && k !== "Rotation" && k !== "id") {
-      cleanNbt[k] = v;
+    if (k !== "Pos" && k !== "Motion" && k !== "Rotation") {
+      data[k] = v;
     }
   }
-  cleanNbt["id"] = id;
-  return {
-    id: entityTypeToSpawnEgg(id),
-    count: 1,
-    components: {
-      "minecraft:entity_data": cleanNbt,
-    },
-  };
+  data["id"] = id;
+  return { id: entityTypeToSpawnEgg(id), count: 1, components: { "minecraft:entity_data": data } };
 }
 
+const BE_SKIP = new Set(["id", "x", "y", "z", "keepPacked", "DataVersion"]);
+
 function blockEntityValues(beNbt: Record<string, unknown>): Record<string, unknown> {
-  const SKIP_KEYS = new Set(["id", "x", "y", "z", "keepPacked", "DataVersion"]);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(beNbt)) {
-    if (!SKIP_KEYS.has(k)) {
-      out[k] = v;
-    }
+    if (!BE_SKIP.has(k)) out[k] = v;
   }
   return out;
 }
 
-class PartAccumulator {
+// ── Part builder ─────────────────────────────────────────────────────────────
+// Parts are JSON arrays: [item, item, ...]
+// Multiple block-type entries and/or entity batches can share one part.
+// Entities MUST be appended last — call finishBlocks() before addEntities*().
+
+class PartBuilder {
   private parts: string[] = [];
-  private currentItems: string[] = [];
+  private current: string[] = [];
   private currentCoords = 0;
-  private currentChars = 0;
-  private readonly maxCoords: number;
-  private readonly maxChars: number;
+  private currentChars = 2; // 2 = "[]"
 
-  constructor(maxCoords: number, maxChars: number) {
-    this.maxCoords = maxCoords;
-    this.maxChars = maxChars;
-  }
+  constructor(private readonly maxCoords: number, private readonly maxChars: number) {}
 
-  addItem(jsonStr: string, coordCount: number): void {
-    const wouldChars = this.currentChars + jsonStr.length + (this.currentItems.length > 0 ? 1 : 0);
-    const wouldCoords = this.currentCoords + coordCount;
-    if (
-      this.currentItems.length > 0 &&
-      (wouldCoords > this.maxCoords || wouldChars > this.maxChars)
-    ) {
-      this.flush();
-    }
-    this.currentItems.push(jsonStr);
-    this.currentCoords += coordCount;
-    this.currentChars += jsonStr.length + (this.currentItems.length > 1 ? 1 : 0);
-  }
-
-  flush(): void {
-    if (this.currentItems.length === 0) return;
-    this.parts.push(this.currentItems.join(","));
-    this.currentItems = [];
+  private flush(): void {
+    if (this.current.length === 0) return;
+    this.parts.push("[" + this.current.join(",") + "]");
+    this.current = [];
     this.currentCoords = 0;
-    this.currentChars = 0;
+    this.currentChars = 2;
+  }
+
+  private tryAdd(entry: string, coords: number): boolean {
+    const sep = this.current.length > 0 ? 1 : 0; // comma
+    if (
+      this.current.length > 0 &&
+      (this.currentCoords + coords > this.maxCoords ||
+        this.currentChars + sep + entry.length > this.maxChars)
+    ) {
+      return false;
+    }
+    this.current.push(entry);
+    this.currentCoords += coords;
+    this.currentChars += sep + entry.length;
+    return true;
+  }
+
+  /** Add a block type, splitting its coords across parts as needed. */
+  addBlockType(id: string, allCoords: Coord3[]): void {
+    let offset = 0;
+    while (offset < allCoords.length) {
+      const remainCoords = this.maxCoords - this.currentCoords;
+
+      if (remainCoords <= 0) {
+        this.flush();
+        continue;
+      }
+
+      const take = Math.min(remainCoords, allCoords.length - offset);
+      const slice = allCoords.slice(offset, offset + take);
+      const entry = JSON.stringify({ type: "block", id, coords: slice });
+
+      if (!this.tryAdd(entry, take)) {
+        if (this.current.length === 0) {
+          // single entry too large for char limit — force-add and flush
+          this.current.push(entry);
+          this.currentCoords += take;
+          this.currentChars += entry.length;
+          offset += take;
+          this.flush();
+        } else {
+          this.flush(); // make room and retry
+        }
+      } else {
+        offset += take;
+      }
+    }
+  }
+
+  /** Flush any pending block parts, then add a single generic entry (entity/BE batch). */
+  addLast(entry: string, coords: number): void {
+    if (!this.tryAdd(entry, coords)) {
+      this.flush();
+      if (this.current.length === 0) {
+        this.current.push(entry);
+        this.currentCoords += coords;
+        this.currentChars += entry.length;
+      } else {
+        this.tryAdd(entry, coords);
+      }
+    }
   }
 
   getParts(): string[] {
@@ -234,6 +270,8 @@ class PartAccumulator {
   }
 }
 
+// ── Main parser ───────────────────────────────────────────────────────────────
+
 export async function parseLitematic(
   buffer: Buffer,
   settings: Partial<ParseSettings> = {}
@@ -241,7 +279,9 @@ export async function parseLitematic(
   const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
 
   const decompressed = await gunzipAsync(buffer);
-  const { parsed: root } = await (nbt as unknown as { parse: (buf: Buffer, opts?: unknown) => Promise<{ parsed: NbtTag }> }).parse(decompressed);
+  const { parsed: root } = await (
+    nbt as unknown as { parse: (buf: Buffer) => Promise<{ parsed: NbtTag }> }
+  ).parse(decompressed);
   const rootCompound = root.value as Record<string, NbtTag>;
 
   const meta = getCompound(rootCompound, "Metadata");
@@ -254,17 +294,19 @@ export async function parseLitematic(
   const regionsCompound = regionsTag.value as Record<string, NbtTag>;
   const regionNames = Object.keys(regionsCompound);
 
-  const accumulator = new PartAccumulator(opts.maxCoordsPerPart, opts.maxCharsPerPart);
   const chunkGroupSz = chunkGroupSize(opts.chunkMode);
+
+  // Accumulate blocks
+  const blocksByChunk = new Map<string, Map<string, Coord3[]>>();
+  const blocksNoChunk = new Map<string, Coord3[]>();
+
+  // Accumulate entities and BEs — kept separate to add LAST
+  const entityItems: Array<{ pos: Coord3; nbt: Record<string, unknown> }> = [];
+  const beItems: Array<{ pos: Coord3; values: Record<string, unknown> }> = [];
 
   let totalBlocks = 0;
   let totalEntities = 0;
   let totalBlockEntities = 0;
-
-  const blocksByChunk = new Map<string, Map<string, [number, number, number][]>>();
-  const blocksNoChunk = new Map<string, [number, number, number][]>();
-  const entities: Array<{ pos: [number, number, number]; nbt: Record<string, unknown> }> = [];
-  const blockEntities: Array<{ pos: [number, number, number]; values: Record<string, unknown> }> = [];
 
   for (const regionName of regionNames) {
     const regionTag = regionsCompound[regionName];
@@ -273,6 +315,7 @@ export async function parseLitematic(
 
     const posTag = getCompound(region, "Position");
     const sizeTag = getCompound(region, "Size");
+
     const rPosX = getInt(posTag, "x") || getInt(posTag, "X");
     const rPosY = getInt(posTag, "y") || getInt(posTag, "Y");
     const rPosZ = getInt(posTag, "z") || getInt(posTag, "Z");
@@ -291,9 +334,10 @@ export async function parseLitematic(
       for (const entry of paletteList.value as Record<string, NbtTag>[]) {
         const name = getStr(entry, "Name");
         const propsTag = entry["Properties"];
-        const props = propsTag && propsTag.type === "compound"
-          ? (propsTag.value as Record<string, NbtTag>)
-          : {};
+        const props =
+          propsTag && propsTag.type === "compound"
+            ? (propsTag.value as Record<string, NbtTag>)
+            : {};
         palette.push({ id: blockStateId(name, props) });
       }
     }
@@ -301,10 +345,13 @@ export async function parseLitematic(
     const blockStates = getLongArray(region, "BlockStates");
     const bitsPerBlock = palette.length > 1 ? Math.max(2, Math.ceil(Math.log2(palette.length))) : 2;
 
+    // Decode blocks: Litematica iterates Y → Z → X
     for (let i = 0; i < volume; i++) {
       const paletteIdx = decodePaletteIndex(blockStates, i, bitsPerBlock);
       const block = palette[paletteIdx];
-      if (!block || AIR_BLOCKS.has(block.id.split("[")[0])) continue;
+      if (!block) continue;
+      const baseName = block.id.split("[")[0];
+      if (AIR_BLOCKS.has(baseName)) continue;
 
       const ly = Math.floor(i / (absSizeX * absSizeZ));
       const rem = i % (absSizeX * absSizeZ);
@@ -314,39 +361,22 @@ export async function parseLitematic(
       const ax = rPosX + (rSizeX < 0 ? lx + rSizeX + 1 : lx);
       const ay = rPosY + (rSizeY < 0 ? ly + rSizeY + 1 : ly);
       const az = rPosZ + (rSizeZ < 0 ? lz + rSizeZ + 1 : lz);
-
       totalBlocks++;
 
+      const coord: Coord3 = [ax, ay, az];
       if (opts.chunkMode !== "off") {
         const ck = chunkKey(ax, az, chunkGroupSz);
         if (!blocksByChunk.has(ck)) blocksByChunk.set(ck, new Map());
-        const chunkMap = blocksByChunk.get(ck)!;
-        if (!chunkMap.has(block.id)) chunkMap.set(block.id, []);
-        chunkMap.get(block.id)!.push([ax, ay, az]);
+        const cm = blocksByChunk.get(ck)!;
+        if (!cm.has(block.id)) cm.set(block.id, []);
+        cm.get(block.id)!.push(coord);
       } else {
         if (!blocksNoChunk.has(block.id)) blocksNoChunk.set(block.id, []);
-        blocksNoChunk.get(block.id)!.push([ax, ay, az]);
+        blocksNoChunk.get(block.id)!.push(coord);
       }
     }
 
-    if (opts.entityMode !== "off") {
-      const entList = getList(region, "Entities");
-      if (entList.type === "compound") {
-        for (const entCompound of entList.value as Record<string, NbtTag>[]) {
-          const entNbt = nbtCompoundToJs(entCompound);
-          const posList = getList(entCompound, "Pos");
-          let ex = 0, ey = 0, ez = 0;
-          if (posList.type === "double" && posList.value.length >= 3) {
-            ex = Math.round(posList.value[0] as number);
-            ey = Math.round(posList.value[1] as number);
-            ez = Math.round(posList.value[2] as number);
-          }
-          entities.push({ pos: [ex, ey, ez], nbt: entNbt });
-          totalEntities++;
-        }
-      }
-    }
-
+    // Collect block entities (TileEntities) — added AFTER blocks
     if (opts.blockEntityMode) {
       const beList = getList(region, "TileEntities");
       if (beList.type === "compound") {
@@ -357,61 +387,78 @@ export async function parseLitematic(
           const bez = getInt(beCompound, "z");
           const values = blockEntityValues(beNbt);
           if (Object.keys(values).length > 0) {
-            blockEntities.push({ pos: [bex, bey, bez], values });
+            beItems.push({ pos: [bex, bey, bez], values });
             totalBlockEntities++;
           }
         }
       }
     }
+
+    // Collect entities — added LAST
+    if (opts.entityMode !== "off") {
+      const entList = getList(region, "Entities");
+      if (entList.type === "compound") {
+        for (const entCompound of entList.value as Record<string, NbtTag>[]) {
+          const entNbt = nbtCompoundToJs(entCompound);
+          const posList = getList(entCompound, "Pos");
+          let ex = 0, ey = 0, ez = 0;
+          if (posList.type === "double" && (posList.value as number[]).length >= 3) {
+            const pv = posList.value as number[];
+            ex = Math.round(pv[0]);
+            ey = Math.round(pv[1]);
+            ez = Math.round(pv[2]);
+          }
+          entityItems.push({ pos: [ex, ey, ez], nbt: entNbt });
+          totalEntities++;
+        }
+      }
+    }
   }
 
+  // ── Build parts ─────────────────────────────────────────────────────────────
+  // Order: blocks → block entities → entities (entities ALWAYS last)
+
+  const builder = new PartBuilder(opts.maxCoordsPerPart, opts.maxCharsPerPart);
+
   if (opts.chunkMode !== "off") {
-    const sortedChunks = Array.from(blocksByChunk.keys()).sort();
-    for (const ck of sortedChunks) {
-      const chunkMap = blocksByChunk.get(ck)!;
-      for (const [blockId, coords] of chunkMap) {
-        const obj = JSON.stringify({ type: "block", id: blockId, coords });
-        accumulator.addItem(obj, coords.length);
+    for (const ck of Array.from(blocksByChunk.keys()).sort()) {
+      const cm = blocksByChunk.get(ck)!;
+      for (const [blockId, coords] of cm) {
+        builder.addBlockType(blockId, coords);
       }
     }
   } else {
     for (const [blockId, coords] of blocksNoChunk) {
-      let offset = 0;
-      while (offset < coords.length) {
-        const slice = coords.slice(offset, offset + opts.maxCoordsPerPart);
-        const obj = JSON.stringify({ type: "block", id: blockId, coords: slice });
-        accumulator.addItem(obj, slice.length);
-        offset += slice.length;
+      builder.addBlockType(blockId, coords);
+    }
+  }
+
+  // Block entities — batched, added after all blocks
+  const BE_BATCH = 32;
+  for (let i = 0; i < beItems.length; i += BE_BATCH) {
+    const batch = beItems.slice(i, i + BE_BATCH);
+    const entry = JSON.stringify({
+      type: "blockEntity",
+      blocks: batch.map((be) => ({ pos: be.pos, values: be.values })),
+    });
+    builder.addLast(entry, batch.length);
+  }
+
+  // Entities — LAST
+  const ENT_BATCH = 64;
+  for (let i = 0; i < entityItems.length; i += ENT_BATCH) {
+    const batch = entityItems.slice(i, i + ENT_BATCH);
+    const entities = batch.map((e) => {
+      if (opts.entityMode === "eggs") {
+        return { egg: entityToEgg(e.nbt), pos: e.pos };
       }
-    }
+      return { nbt: e.nbt, pos: e.pos };
+    });
+    const entry = JSON.stringify({ type: "entity", entities });
+    builder.addLast(entry, batch.length);
   }
 
-  if (opts.entityMode !== "off" && entities.length > 0) {
-    const BATCH = 64;
-    for (let i = 0; i < entities.length; i += BATCH) {
-      const batch = entities.slice(i, i + BATCH);
-      const entityItems = batch.map((e) => {
-        if (opts.entityMode === "eggs") {
-          return { egg: entityToEgg(e.nbt), pos: e.pos };
-        }
-        return { nbt: e.nbt, pos: e.pos };
-      });
-      const obj = JSON.stringify({ type: "entity", entities: entityItems });
-      accumulator.addItem(obj, batch.length);
-    }
-  }
-
-  if (opts.blockEntityMode && blockEntities.length > 0) {
-    const BATCH = 32;
-    for (let i = 0; i < blockEntities.length; i += BATCH) {
-      const batch = blockEntities.slice(i, i + BATCH);
-      const blocks = batch.map((be) => ({ pos: be.pos, values: be.values }));
-      const obj = JSON.stringify({ type: "blockEntity", blocks });
-      accumulator.addItem(obj, batch.length);
-    }
-  }
-
-  const parts = accumulator.getParts();
+  const parts = builder.getParts();
 
   return {
     name: schematicName,
