@@ -12,3 +12,6 @@ export const ASYNC_UPLOAD_THRESHOLD_BYTES =
 
 /** Parts per INSERT batch (large schematics → thousands of parts). */
 export const PARTS_DB_BATCH_SIZE = 50;
+
+/** Temp uploads + background parse files. */
+export const UPLOAD_TMP_DIR = process.env.UPLOAD_TMP_DIR ?? "/tmp/litematic-uploads";

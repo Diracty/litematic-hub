@@ -31,14 +31,52 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function gatewayErrorMessage(status: number): string {
+  return (
+    `Сервер недоступен (HTTP ${status}, Bad Gateway). ` +
+    "Часто это таймаут прокси RelaxDev или нехватка памяти при парсинге большого файла. " +
+    "Подождите 1–2 минуты и загрузите снова; если повторяется — напишите в поддержку RelaxDev про лимит RAM/таймаут."
+  );
+}
+
+async function readJsonBody<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text.trim()) {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(gatewayErrorMessage(res.status));
+    }
+    throw new Error(`Пустой ответ сервера (HTTP ${res.status})`);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(gatewayErrorMessage(res.status));
+    }
+    const preview = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+    throw new Error(`${preview} (HTTP ${res.status})`);
+  }
+}
+
+function isGatewayStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504;
+}
+
 async function pollUploadJob(
   jobId: string,
   onParseProgress: (pct: number) => void,
 ): Promise<Record<string, unknown>> {
   const deadline = Date.now() + 15 * 60 * 1000;
+  let gatewayRetries = 0;
   while (Date.now() < deadline) {
     const res = await fetch(`/api/upload-jobs/${jobId}`);
-    const body = (await res.json()) as UploadJobResponse;
+    if (isGatewayStatus(res.status) && gatewayRetries < 30) {
+      gatewayRetries++;
+      await sleep(3000);
+      continue;
+    }
+    const body = await readJsonBody<UploadJobResponse>(res);
+    gatewayRetries = 0;
     if (!res.ok) {
       throw new Error(body.error ?? `Job poll failed (${res.status})`);
     }
@@ -77,7 +115,10 @@ function uploadWithProgress(
         try {
           body = JSON.parse(xhr.responseText) as UploadJobResponse & { error?: string };
         } catch {
-          /* non-json */
+          if (isGatewayStatus(xhr.status)) {
+            reject(new Error(gatewayErrorMessage(xhr.status)));
+            return;
+          }
         }
         if (xhr.status === 202 && body.jobId) {
           onQueued();
@@ -88,7 +129,14 @@ function uploadWithProgress(
           resolve(body);
           return;
         }
-        reject(new Error(body.error ?? `Upload failed (${xhr.status})`));
+        reject(
+          new Error(
+            body.error ??
+              (isGatewayStatus(xhr.status)
+                ? gatewayErrorMessage(xhr.status)
+                : `Upload failed (${xhr.status})`),
+          ),
+        );
       })().catch(reject);
     };
     xhr.onerror = () => reject(new Error("Network error during upload"));
@@ -256,7 +304,9 @@ export function FileUpload({ sessionId }: FileUploadProps) {
                   <p className="text-xs text-muted-foreground text-center">
                     {uploadPhase === "parse"
                       ? parsePct > 0
-                        ? t.uploadParseProgress.replace("{pct}", String(parsePct))
+                        ? parsePct < 15
+                          ? `${t.uploadParseProgress.replace("{pct}", String(parsePct))} — этап распаковки, может занять несколько минут`
+                          : t.uploadParseProgress.replace("{pct}", String(parsePct))
                         : t.uploadQueued
                       : t.uploadProgress.replace("{pct}", String(uploadPct))}
                   </p>

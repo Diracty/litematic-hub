@@ -24,7 +24,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV STATIC_DIR=/app/public
-ENV NODE_OPTIONS="--max-old-space-size=1792"
+# RelaxDev/small VPS often have ~512MB–1GB RAM; 1792MB heap → OOM kill → 502 during parse.
+ENV NODE_OPTIONS="--max-old-space-size=768"
 ENV MAX_LITEMATIC_UPLOAD_MB=100
 
 COPY --from=builder /app/artifacts/api-server/dist /app/api-server/dist

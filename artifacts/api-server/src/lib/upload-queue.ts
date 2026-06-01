@@ -1,12 +1,11 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { parseLitematic } from "./litematic-parser.js";
 import type { ParseSettings } from "./litematic/types.js";
 import { logger } from "./logger.js";
 import { persistParsedUpload, type PersistedUpload } from "./persist-parsed.js";
 import { uploadParseErrorMessage } from "./upload-errors.js";
-import { ASYNC_UPLOAD_THRESHOLD_BYTES } from "./upload-limits.js";
+import { ASYNC_UPLOAD_THRESHOLD_BYTES, UPLOAD_TMP_DIR } from "./upload-limits.js";
 
 export type UploadJobStatus = "queued" | "processing" | "done" | "failed";
 
@@ -29,8 +28,6 @@ const jobMeta = new Map<string, { originalFilename: string; sizeBytes: number }>
 const pending: string[] = [];
 let draining = false;
 
-const TMP_DIR = process.env.UPLOAD_TMP_DIR ?? "/tmp/litematic-uploads";
-
 export function shouldUseAsyncUpload(sizeBytes: number): boolean {
   return sizeBytes >= ASYNC_UPLOAD_THRESHOLD_BYTES;
 }
@@ -40,22 +37,19 @@ export function getUploadJob(jobId: string): UploadJob | undefined {
 }
 
 export async function enqueueUploadJob(opts: {
-  buffer: Buffer;
+  jobId: string;
   sessionId: string;
   originalFilename: string;
   settings: ParseSettings;
+  sizeBytes: number;
 }): Promise<string> {
-  await mkdir(TMP_DIR, { recursive: true });
-  const jobId = randomUUID();
-  const path = join(TMP_DIR, `${jobId}.litematic`);
-
-  await writeFile(path, opts.buffer);
+  const { jobId } = opts;
 
   jobs.set(jobId, {
     jobId,
     sessionId: opts.sessionId,
     status: "queued",
-    sizeBytes: opts.buffer.length,
+    sizeBytes: opts.sizeBytes,
     createdAt: Date.now(),
     progress: 0,
     stage: "queued",
@@ -63,7 +57,7 @@ export async function enqueueUploadJob(opts: {
   jobSettings.set(jobId, opts.settings);
   jobMeta.set(jobId, {
     originalFilename: opts.originalFilename,
-    sizeBytes: opts.buffer.length,
+    sizeBytes: opts.sizeBytes,
   });
 
   pending.push(jobId);
@@ -88,7 +82,7 @@ async function runJob(jobId: string): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) return;
 
-  const path = join(TMP_DIR, `${jobId}.litematic`);
+  const path = join(UPLOAD_TMP_DIR, `${jobId}.litematic`);
   job.status = "processing";
   job.progress = 0;
   job.stage = "starting";

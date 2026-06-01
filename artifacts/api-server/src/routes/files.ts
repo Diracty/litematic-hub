@@ -1,6 +1,9 @@
 import { Router } from "express";
 import multer from "multer";
 import type { Request, Response, NextFunction } from "express";
+import { mkdirSync } from "node:fs";
+import { readFile, unlink, rename } from "node:fs/promises";
+import { join } from "node:path";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db, litematicFilesTable, litematicPartsTable } from "@workspace/db";
@@ -8,6 +11,7 @@ import { parseLitematic, DEFAULT_SETTINGS, type ParseSettings } from "../lib/lit
 import {
   MAX_LITEMATIC_UPLOAD_BYTES,
   MAX_LITEMATIC_UPLOAD_MB,
+  UPLOAD_TMP_DIR,
 } from "../lib/upload-limits.js";
 import { uploadParseErrorMessage } from "../lib/upload-errors.js";
 import { persistParsedUpload } from "../lib/persist-parsed.js";
@@ -19,8 +23,18 @@ import {
 
 const router = Router();
 
+mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
+
+/** Disk storage: avoid holding 30–100 MB twice in RAM (multer buffer + temp write). */
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      cb(null, UPLOAD_TMP_DIR);
+    },
+    filename: (_req, _file, cb) => {
+      cb(null, `upload-${randomUUID()}.litematic`);
+    },
+  }),
   limits: { fileSize: MAX_LITEMATIC_UPLOAD_BYTES },
   fileFilter(_req, file, cb) {
     if (file.originalname.endsWith(".litematic") || file.mimetype === "application/octet-stream") {
@@ -129,11 +143,16 @@ router.post("/files/upload", uploadSingle, async (req, res) => {
   const mergedSettings = parseBodySettings(req.body as Record<string, unknown>);
 
   if (shouldUseAsyncUpload(req.file.size)) {
-    const jobId = await enqueueUploadJob({
-      buffer: req.file.buffer,
+    const jobId = randomUUID();
+    const destPath = join(UPLOAD_TMP_DIR, `${jobId}.litematic`);
+    await rename(req.file.path, destPath);
+
+    await enqueueUploadJob({
+      jobId,
       sessionId,
       originalFilename: req.file.originalname,
       settings: mergedSettings,
+      sizeBytes: req.file.size,
     });
     req.log.info({ jobId, sizeBytes: req.file.size }, "upload queued for background parse");
     res.status(202).json({
@@ -146,9 +165,11 @@ router.post("/files/upload", uploadSingle, async (req, res) => {
   }
 
   const started = Date.now();
+  const tempPath = req.file.path;
 
   try {
-    const parsed = await parseLitematic(req.file.buffer, mergedSettings);
+    const buffer = await readFile(tempPath);
+    const parsed = await parseLitematic(buffer, mergedSettings);
     const result = await persistParsedUpload(parsed, {
       sessionId,
       originalFilename: req.file.originalname,
@@ -165,6 +186,8 @@ router.post("/files/upload", uploadSingle, async (req, res) => {
   } catch (err) {
     req.log.error({ err, sizeBytes: req.file.size, ms: Date.now() - started }, "uploadFile parse error");
     res.status(500).json({ error: uploadParseErrorMessage(err) });
+  } finally {
+    await unlink(tempPath).catch(() => undefined);
   }
 });
 
