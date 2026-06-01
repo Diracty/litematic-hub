@@ -61,6 +61,7 @@ function uploadWithProgress(
   formData: FormData,
   onProgress: (pct: number) => void,
   onQueued: () => void,
+  onParseProgress: (pct: number) => void,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -80,7 +81,7 @@ function uploadWithProgress(
         }
         if (xhr.status === 202 && body.jobId) {
           onQueued();
-          resolve(await pollUploadJob(body.jobId, setParsePct));
+          resolve(await pollUploadJob(body.jobId, onParseProgress));
           return;
         }
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -147,6 +148,7 @@ export function FileUpload({ sessionId }: FileUploadProps) {
             setUploadPhase("parse");
             setParsePct(0);
           },
+          setParsePct,
         );
       } finally {
         setUploadPhase("idle");
