@@ -10,7 +10,16 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const databaseUrl = process.env.DATABASE_URL;
+const needsSsl =
+  databaseUrl.includes("supabase") ||
+  databaseUrl.includes("sslmode=require") ||
+  databaseUrl.includes("neon.tech");
+
+export const pool = new Pool({
+  connectionString: databaseUrl,
+  ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+});
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
