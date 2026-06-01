@@ -14,6 +14,20 @@ function parseHeapMb(): number {
   return Number.isFinite(n) && n >= 256 ? n : 1200;
 }
 
+function formatChildFailure(code: number | null, errText: string): string {
+  if (errText.trim() && !errText.startsWith("Parse process exited")) {
+    return errText.trim();
+  }
+  if (code === null || code === 137 || code === 134) {
+    return (
+      "Процесс парсинга убит сервером (нехватка оперативной памяти). " +
+      "В RelaxDev в Environment: PARSE_HEAP_MB=1400, убери NODE_OPTIONS, полный редеплой. " +
+      "Если снова падает — бесплатному контейнеру может не хватить RAM на файл ~30 МБ."
+    );
+  }
+  return `Парсинг завершился с ошибкой (код ${code ?? "неизвестен"})`;
+}
+
 export function runParseInSubprocess(
   jobId: string,
   onProgress?: ParseProgressReporter,
@@ -75,7 +89,7 @@ export function runParseInSubprocess(
           return;
         }
 
-        let errText = `Parse process exited with code ${code ?? "?"}`;
+        let errText = "";
         try {
           errText = await readFile(errorPath, "utf-8");
         } catch {
@@ -83,7 +97,7 @@ export function runParseInSubprocess(
         }
         await unlink(resultPath).catch(() => undefined);
         await unlink(errorPath).catch(() => undefined);
-        reject(new Error(errText));
+        reject(new Error(formatChildFailure(code, errText)));
       })().catch(reject);
     });
   });
