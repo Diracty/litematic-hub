@@ -45,5 +45,9 @@ Thumbs.db
 .github/instructions/nx.instructions.md
 
 # Replit
+
+# Self-host tunnel binary (downloaded by deploy/host-public.ps1)
+deploy/cloudflared.exe
+deploy/.env
 .cache/
 .local/

@@ -5,6 +5,12 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "host": "docker compose -f deploy/docker-compose.yml up --build",
+    "host:detach": "docker compose -f deploy/docker-compose.yml up --build -d",
+    "host:down": "docker compose -f deploy/docker-compose.yml down",
+    "host:public": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/host-public.ps1",
+    "host:public:nodocker": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/host-public-no-docker.ps1",
+    "replit:pack": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/pack-for-replit.ps1",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },

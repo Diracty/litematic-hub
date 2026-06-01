@@ -1,0 +1,8 @@
+**/node_modules
+**/.git
+**/.agents
+**/dist
+*.md
+.env
+.env.*
+!.env.example

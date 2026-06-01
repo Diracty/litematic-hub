@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-litematic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-litematic}
+      POSTGRES_DB: ${POSTGRES_DB:-litematic}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-litematic} -d ${POSTGRES_DB:-litematic}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-litematic}:${POSTGRES_PASSWORD:-litematic}@db:5432/${POSTGRES_DB:-litematic}
+      STATIC_DIR: /app/public
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
