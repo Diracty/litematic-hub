@@ -22,6 +22,13 @@ export function uploadParseErrorMessage(err: unknown): string {
     return "File is not a valid gzip .litematic archive.";
   }
 
+  if (lower.includes("array size is abnormally large")) {
+    return (
+      "Schematic contains very large block data. Update the server (noArraySizeCheck) " +
+      "or split the build into smaller regions."
+    );
+  }
+
   if (msg.length > 0 && msg.length < 300) {
     return msg;
   }

@@ -44,9 +44,10 @@ export async function parseLitematic(
 ): Promise<ParsedLitematic> {
   const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
   const decompressed = await gunzipAsync(buffer);
-  const { parsed: root } = await (
-    nbt as unknown as { parse: (buf: Buffer) => Promise<{ parsed: NbtTag }> }
-  ).parse(decompressed);
+  // Large schematics: BlockStates arrays can be 60MB+; default prismarine limit is ~16MB.
+  const root = await nbt.parseUncompressed(decompressed, "big", {
+    noArraySizeCheck: true,
+  });
 
   const rootCompound = root.value as NbtCompound;
   const meta = getCompound(rootCompound, "Metadata");
