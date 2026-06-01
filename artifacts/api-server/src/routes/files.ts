@@ -5,13 +5,17 @@ import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db, litematicFilesTable, litematicPartsTable } from "@workspace/db";
 import { parseLitematic, DEFAULT_SETTINGS, type ParseSettings } from "../lib/litematic-parser";
-import { logger } from "../lib/logger";
 import {
   MAX_LITEMATIC_UPLOAD_BYTES,
   MAX_LITEMATIC_UPLOAD_MB,
-  PARTS_DB_BATCH_SIZE,
 } from "../lib/upload-limits.js";
 import { uploadParseErrorMessage } from "../lib/upload-errors.js";
+import { persistParsedUpload } from "../lib/persist-parsed.js";
+import {
+  enqueueUploadJob,
+  getUploadJob,
+  shouldUseAsyncUpload,
+} from "../lib/upload-queue.js";
 
 const router = Router();
 
@@ -43,21 +47,39 @@ function uploadSingle(req: Request, res: Response, next: NextFunction): void {
   });
 }
 
-async function insertPartsBatched(fileKey: string, parts: string[]): Promise<void> {
-  for (let i = 0; i < parts.length; i += PARTS_DB_BATCH_SIZE) {
-    const slice = parts.slice(i, i + PARTS_DB_BATCH_SIZE);
-    await db.insert(litematicPartsTable).values(
-      slice.map((data, j) => ({
-        fileKey,
-        partNumber: i + j + 1,
-        data,
-      })),
-    );
+function parseBodySettings(body: Record<string, unknown>): ParseSettings {
+  const settings: Partial<ParseSettings> = {};
+  if (body["maxCoordsPerPart"]) settings.maxCoordsPerPart = parseInt(String(body["maxCoordsPerPart"]));
+  if (body["maxCharsPerPart"]) settings.maxCharsPerPart = parseInt(String(body["maxCharsPerPart"]));
+  if (body["chunkMode"]) settings.chunkMode = String(body["chunkMode"]) as ParseSettings["chunkMode"];
+  if (body["entityMode"]) settings.entityMode = String(body["entityMode"]) as ParseSettings["entityMode"];
+  if (body["blockEntityMode"] !== undefined) {
+    settings.blockEntityMode = String(body["blockEntityMode"]) !== "false";
   }
+  if (body["biomeMode"] !== undefined) {
+    settings.biomeMode = String(body["biomeMode"]) === "true";
+  }
+  return { ...DEFAULT_SETTINGS, ...settings };
 }
 
 router.get("/upload-limits", (_req, res) => {
   res.json({ maxUploadMb: MAX_LITEMATIC_UPLOAD_MB });
+});
+
+router.get("/upload-jobs/:jobId", (req, res) => {
+  const job = getUploadJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: "Job not found" });
+    return;
+  }
+  res.json({
+    jobId: job.jobId,
+    status: job.status,
+    progress: job.progress,
+    stage: job.stage,
+    error: job.error,
+    result: job.result,
+  });
 });
 
 router.get("/files", async (req, res) => {
@@ -104,75 +126,44 @@ router.post("/files/upload", uploadSingle, async (req, res) => {
   }
 
   const sessionId = (req.body["sessionId"] as string) || randomUUID();
+  const mergedSettings = parseBodySettings(req.body as Record<string, unknown>);
+
+  if (shouldUseAsyncUpload(req.file.size)) {
+    const jobId = await enqueueUploadJob({
+      buffer: req.file.buffer,
+      sessionId,
+      originalFilename: req.file.originalname,
+      settings: mergedSettings,
+    });
+    req.log.info({ jobId, sizeBytes: req.file.size }, "upload queued for background parse");
+    res.status(202).json({
+      jobId,
+      status: "queued",
+      sessionId,
+      message: "Large file queued. Poll GET /api/upload-jobs/:jobId until status is done.",
+    });
+    return;
+  }
+
   const started = Date.now();
 
-  const settings: Partial<ParseSettings> = {};
-  if (req.body["maxCoordsPerPart"]) settings.maxCoordsPerPart = parseInt(req.body["maxCoordsPerPart"]);
-  if (req.body["maxCharsPerPart"]) settings.maxCharsPerPart = parseInt(req.body["maxCharsPerPart"]);
-  if (req.body["chunkMode"]) settings.chunkMode = req.body["chunkMode"];
-  if (req.body["entityMode"]) settings.entityMode = req.body["entityMode"];
-  if (req.body["blockEntityMode"] !== undefined) settings.blockEntityMode = req.body["blockEntityMode"] !== "false";
-  if (req.body["biomeMode"] !== undefined) settings.biomeMode = req.body["biomeMode"] === "true";
-
-  const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
-
   try {
-    req.log.info(
-      { sizeBytes: req.file.size, name: req.file.originalname },
-      "parse started",
-    );
     const parsed = await parseLitematic(req.file.buffer, mergedSettings);
-    const key = randomUUID();
-
-    await db.insert(litematicFilesTable).values({
-      key,
+    const result = await persistParsedUpload(parsed, {
       sessionId,
-      name: parsed.name,
       originalFilename: req.file.originalname,
       sizeBytes: req.file.size,
-      partCount: parsed.parts.length,
-      blockCount: parsed.blockCount,
-      entityCount: parsed.entityCount,
-      blockEntityCount: parsed.blockEntityCount,
-      regionCount: parsed.regionCount,
-      blockTypes: parsed.blockTypes,
-      entityTypes: parsed.entityTypes,
-      blockEntityTypes: parsed.blockEntityTypes,
-      dimensionsX: parsed.dimensions.x,
-      dimensionsY: parsed.dimensions.y,
-      dimensionsZ: parsed.dimensions.z,
       settings: mergedSettings,
     });
 
-    if (parsed.parts.length > 0) {
-      await insertPartsBatched(key, parsed.parts);
-    }
-
     req.log.info(
-      {
-        key,
-        partCount: parsed.parts.length,
-        sizeBytes: req.file.size,
-        ms: Date.now() - started,
-      },
+      { key: result.key, partCount: result.partCount, sizeBytes: req.file.size, ms: Date.now() - started },
       "File uploaded and parsed",
     );
 
-    res.status(201).json({
-      key,
-      name: parsed.name,
-      partCount: parsed.parts.length,
-      sessionId,
-      blockCount: parsed.blockCount,
-      entityCount: parsed.entityCount,
-      blockEntityCount: parsed.blockEntityCount,
-      regionCount: parsed.regionCount,
-    });
+    res.status(201).json(result);
   } catch (err) {
-    req.log.error(
-      { err, sizeBytes: req.file.size, ms: Date.now() - started },
-      "uploadFile parse error",
-    );
+    req.log.error({ err, sizeBytes: req.file.size, ms: Date.now() - started }, "uploadFile parse error");
     res.status(500).json({ error: uploadParseErrorMessage(err) });
   }
 });
@@ -205,7 +196,7 @@ router.get("/files/:key", async (req, res) => {
       blockTypes: row.blockTypes ?? {},
       entityTypes: row.entityTypes ?? {},
       blockEntityTypes: row.blockEntityTypes ?? {},
-      dimensions: { x: row.dimensionsX ?? 0, y: row.dimensionsY ?? 0, z: row.dimensionsZ ?? 0 },
+      dimensions: { x: row.dimensionsX ?? 0, y: r.dimensionsY ?? 0, z: r.dimensionsZ ?? 0 },
       settings: row.settings,
     });
   } catch (err) {

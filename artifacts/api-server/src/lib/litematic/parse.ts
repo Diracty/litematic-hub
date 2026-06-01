@@ -32,22 +32,37 @@ import {
   type EntityPlacement,
   type ParseSettings,
   type ParsedLitematic,
+  type ParseProgressReporter,
 } from "./types.js";
 
 const gunzipAsync = promisify(gunzip);
 
-export { DEFAULT_SETTINGS, type ParseSettings, type ParsedLitematic };
+export { DEFAULT_SETTINGS, type ParseSettings, type ParsedLitematic, type ParseProgressReporter };
+
+function reportProgress(
+  onProgress: ParseProgressReporter | undefined,
+  percent: number,
+  stage: string
+): void {
+  onProgress?.(Math.min(100, Math.max(0, Math.round(percent))), stage);
+}
 
 export async function parseLitematic(
   buffer: Buffer,
-  settings: Partial<ParseSettings> = {}
+  settings: Partial<ParseSettings> = {},
+  onProgress?: ParseProgressReporter
 ): Promise<ParsedLitematic> {
   const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
+
+  reportProgress(onProgress, 2, "decompress");
   const decompressed = await gunzipAsync(buffer);
+
+  reportProgress(onProgress, 8, "nbt");
   // Large schematics: BlockStates arrays can be 60MB+; default prismarine limit is ~16MB.
   const root = await nbt.parseUncompressed(decompressed, "big", {
     noArraySizeCheck: true,
   });
+  reportProgress(onProgress, 15, "regions");
 
   const rootCompound = root.value as NbtCompound;
   const meta = getCompound(rootCompound, "Metadata");
@@ -85,7 +100,10 @@ export async function parseLitematic(
   let totalEntities = 0;
   let totalBlockEntities = 0;
 
-  for (const regionName of regionNames) {
+  const regionCount = regionNames.length;
+
+  for (let regionIndex = 0; regionIndex < regionCount; regionIndex++) {
+    const regionName = regionNames[regionIndex]!;
     const regionTag = regionsCompound[regionName];
     if (regionTag.type !== "compound") continue;
     const region = regionTag.value as NbtCompound;
@@ -172,7 +190,15 @@ export async function parseLitematic(
         }
       }
     }
+
+    reportProgress(
+      onProgress,
+      15 + Math.floor((75 * (regionIndex + 1)) / Math.max(1, regionCount)),
+      "regions"
+    );
   }
+
+  reportProgress(onProgress, 92, "parts");
 
   const blockTypes: Record<string, number> = {};
   const entityTypes: Record<string, number> = {};
@@ -238,8 +264,10 @@ export async function parseLitematic(
   if (useChunks) {
     const chunkKeys = new Set([...blocksByChunk.keys(), ...beByChunk.keys()]);
     const sortedChunks = Array.from(chunkKeys).sort(compareChunkKeys);
+    const chunkTotal = Math.max(1, sortedChunks.length);
 
-    for (const ck of sortedChunks) {
+    for (let ci = 0; ci < sortedChunks.length; ci++) {
+      const ck = sortedChunks[ci]!;
       const cm = blocksByChunk.get(ck);
       if (cm) {
         const blockIds = Array.from(cm.keys()).sort();
@@ -254,17 +282,21 @@ export async function parseLitematic(
       }
 
       builder.finishChunk();
+      reportProgress(onProgress, 92 + Math.floor((5 * (ci + 1)) / chunkTotal), "parts");
     }
   } else {
     for (const [blockId, coords] of blocksNoChunk) {
       builder.addBlockType(blockId, coords);
     }
     addBlockEntityBatches(beFlat);
+    reportProgress(onProgress, 96, "parts");
   }
 
   builder.finishChunk();
 
-  for (const entityOut of entityItems.map(formatEntityOutput)) {
+  const entityTotal = Math.max(1, entityItems.length);
+  for (let ei = 0; ei < entityItems.length; ei++) {
+    const entityOut = formatEntityOutput(entityItems[ei]!);
     addBatchedJsonEntries(
       builder,
       maxChars,
@@ -272,7 +304,10 @@ export async function parseLitematic(
       (batch) => JSON.stringify({ type: "entity", entities: batch }),
       (batch) => batch.length
     );
+    reportProgress(onProgress, 97 + Math.floor((2 * (ei + 1)) / entityTotal), "entities");
   }
+
+  reportProgress(onProgress, 100, "done");
 
   return {
     name: schematicName,

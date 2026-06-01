@@ -18,9 +18,49 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+type UploadJobResponse = {
+  jobId: string;
+  status: string;
+  progress?: number;
+  stage?: string;
+  error?: string;
+  result?: Record<string, unknown>;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function pollUploadJob(
+  jobId: string,
+  onParseProgress: (pct: number) => void,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const res = await fetch(`/api/upload-jobs/${jobId}`);
+    const body = (await res.json()) as UploadJobResponse;
+    if (!res.ok) {
+      throw new Error(body.error ?? `Job poll failed (${res.status})`);
+    }
+    if (typeof body.progress === "number") {
+      onParseProgress(body.progress);
+    }
+    if (body.status === "done" && body.result) {
+      onParseProgress(100);
+      return body.result;
+    }
+    if (body.status === "failed") {
+      throw new Error(body.error ?? "Parse failed");
+    }
+    await sleep(1500);
+  }
+  throw new Error("Parse timed out (15 min)");
+}
+
 function uploadWithProgress(
   formData: FormData,
   onProgress: (pct: number) => void,
+  onQueued: () => void,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -31,17 +71,24 @@ function uploadWithProgress(
       }
     };
     xhr.onload = () => {
-      let body: { error?: string } = {};
-      try {
-        body = JSON.parse(xhr.responseText) as { error?: string };
-      } catch {
-        /* non-json */
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(body);
-        return;
-      }
-      reject(new Error(body.error ?? `Upload failed (${xhr.status})`));
+      void (async () => {
+        let body: UploadJobResponse & { error?: string } = {};
+        try {
+          body = JSON.parse(xhr.responseText) as UploadJobResponse & { error?: string };
+        } catch {
+          /* non-json */
+        }
+        if (xhr.status === 202 && body.jobId) {
+          onQueued();
+          resolve(await pollUploadJob(body.jobId, setParsePct));
+          return;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(body);
+          return;
+        }
+        reject(new Error(body.error ?? `Upload failed (${xhr.status})`));
+      })().catch(reject);
     };
     xhr.onerror = () => reject(new Error("Network error during upload"));
     xhr.ontimeout = () => reject(new Error("Upload timed out"));
@@ -59,6 +106,7 @@ export function FileUpload({ sessionId }: FileUploadProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploadPct, setUploadPct] = useState(0);
+  const [parsePct, setParsePct] = useState(0);
   const [uploadPhase, setUploadPhase] = useState<"idle" | "upload" | "parse">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -89,13 +137,21 @@ export function FileUpload({ sessionId }: FileUploadProps) {
       setUploadPhase("upload");
       setUploadPct(0);
       try {
-        return await uploadWithProgress(formData, (pct) => {
-          setUploadPct(pct);
-          if (pct >= 100) setUploadPhase("parse");
-        });
+        return await uploadWithProgress(
+          formData,
+          (pct) => {
+            setUploadPct(pct);
+            if (pct >= 100) setUploadPhase("parse");
+          },
+          () => {
+            setUploadPhase("parse");
+            setParsePct(0);
+          },
+        );
       } finally {
         setUploadPhase("idle");
         setUploadPct(0);
+        setParsePct(0);
       }
     },
     onSuccess: () => {
@@ -186,12 +242,20 @@ export function FileUpload({ sessionId }: FileUploadProps) {
                   <div className="h-2 rounded-full bg-secondary overflow-hidden">
                     <div
                       className="h-full bg-primary transition-all duration-300"
-                      style={{ width: `${uploadPhase === "parse" ? 100 : uploadPct}%` }}
+                      style={{
+                        width: `${
+                          uploadPhase === "parse"
+                            ? Math.max(parsePct, uploadPct >= 100 ? 1 : 0)
+                            : uploadPct
+                        }%`,
+                      }}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
                     {uploadPhase === "parse"
-                      ? t.uploadParsing
+                      ? parsePct > 0
+                        ? t.uploadParseProgress.replace("{pct}", String(parsePct))
+                        : t.uploadQueued
                       : t.uploadProgress.replace("{pct}", String(uploadPct))}
                   </p>
                 </div>
@@ -203,7 +267,9 @@ export function FileUpload({ sessionId }: FileUploadProps) {
                 <Button size="sm" onClick={() => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} data-testid="button-confirm-upload">
                   {uploadMutation.isPending
                     ? uploadPhase === "parse"
-                      ? t.uploadParsing
+                      ? parsePct > 0
+                        ? t.uploadParseProgress.replace("{pct}", String(parsePct))
+                        : t.uploadQueued
                       : t.uploadPending
                     : t.uploadConfirm}
                 </Button>

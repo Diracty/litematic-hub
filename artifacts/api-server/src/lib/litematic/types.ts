@@ -16,6 +16,9 @@ export const DEFAULT_SETTINGS: ParseSettings = {
   biomeMode: false,
 };
 
+/** 0–100 during parseLitematic (background uploads). */
+export type ParseProgressReporter = (percent: number, stage: string) => void;
+
 export interface ParsedLitematic {
   name: string;
   parts: string[];

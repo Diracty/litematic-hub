@@ -6,5 +6,9 @@ export const MAX_LITEMATIC_UPLOAD_MB = Math.min(
 
 export const MAX_LITEMATIC_UPLOAD_BYTES = MAX_LITEMATIC_UPLOAD_MB * 1024 * 1024;
 
+/** Above this: accept upload immediately, parse in background (avoids proxy 502). */
+export const ASYNC_UPLOAD_THRESHOLD_BYTES =
+  (parseInt(process.env.ASYNC_UPLOAD_THRESHOLD_MB ?? "8", 10) || 8) * 1024 * 1024;
+
 /** Parts per INSERT batch (large schematics → thousands of parts). */
 export const PARTS_DB_BATCH_SIZE = 50;
