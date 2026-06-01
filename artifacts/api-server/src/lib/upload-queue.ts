@@ -1,39 +1,72 @@
-import { readFile, unlink } from "node:fs/promises";
+import { access, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { parseLitematic } from "./litematic-parser.js";
 import type { ParseSettings } from "./litematic/types.js";
 import { logger } from "./logger.js";
-import { persistParsedUpload, type PersistedUpload } from "./persist-parsed.js";
+import { persistParsedUpload } from "./persist-parsed.js";
 import { uploadParseErrorMessage } from "./upload-errors.js";
 import { ASYNC_UPLOAD_THRESHOLD_BYTES, UPLOAD_TMP_DIR } from "./upload-limits.js";
+import {
+  deleteUploadJob,
+  ensureJobsDir,
+  listUploadJobIds,
+  loadUploadJob,
+  patchJob,
+  saveUploadJob,
+  toPublicJob,
+  type UploadJob,
+  type UploadJobRecord,
+} from "./upload-job-store.js";
 
-export type UploadJobStatus = "queued" | "processing" | "done" | "failed";
+export type { UploadJob, UploadJobStatus } from "./upload-job-store.js";
 
-export type UploadJob = {
-  jobId: string;
-  sessionId: string;
-  status: UploadJobStatus;
-  error?: string;
-  result?: PersistedUpload;
-  sizeBytes: number;
-  createdAt: number;
-  /** 0–100 while status is processing */
-  progress: number;
-  stage: string;
-};
-
-const jobs = new Map<string, UploadJob>();
-const jobSettings = new Map<string, ParseSettings>();
-const jobMeta = new Map<string, { originalFilename: string; sizeBytes: number }>();
+const jobs = new Map<string, UploadJobRecord>();
 const pending: string[] = [];
 let draining = false;
+let lastProgressWrite = new Map<string, number>();
 
 export function shouldUseAsyncUpload(sizeBytes: number): boolean {
   return sizeBytes >= ASYNC_UPLOAD_THRESHOLD_BYTES;
 }
 
-export function getUploadJob(jobId: string): UploadJob | undefined {
-  return jobs.get(jobId);
+export async function getUploadJob(jobId: string): Promise<UploadJob | undefined> {
+  let record = jobs.get(jobId);
+  if (!record) {
+    record = await loadUploadJob(jobId);
+    if (record) jobs.set(jobId, record);
+  }
+  return record ? toPublicJob(record) : undefined;
+}
+
+async function persistJob(record: UploadJobRecord): Promise<void> {
+  jobs.set(record.jobId, record);
+  await saveUploadJob(record);
+}
+
+async function persistProgress(
+  record: UploadJobRecord,
+  percent: number,
+  stage: string,
+): Promise<void> {
+  const prevPct = record.progress;
+  const prevStage = record.stage;
+  record.progress = percent;
+  record.stage = stage;
+  jobs.set(record.jobId, record);
+
+  const now = Date.now();
+  const last = lastProgressWrite.get(record.jobId) ?? 0;
+  if (
+    percent >= 100 ||
+    percent - prevPct >= 3 ||
+    stage !== prevStage ||
+    now - last >= 2000
+  ) {
+    lastProgressWrite.set(record.jobId, now);
+    await saveUploadJob(record).catch((err) => {
+      logger.warn({ err, jobId: record.jobId }, "failed to persist job progress");
+    });
+  }
 }
 
 export async function enqueueUploadJob(opts: {
@@ -45,7 +78,7 @@ export async function enqueueUploadJob(opts: {
 }): Promise<string> {
   const { jobId } = opts;
 
-  jobs.set(jobId, {
+  const record: UploadJobRecord = {
     jobId,
     sessionId: opts.sessionId,
     status: "queued",
@@ -53,17 +86,69 @@ export async function enqueueUploadJob(opts: {
     createdAt: Date.now(),
     progress: 0,
     stage: "queued",
-  });
-  jobSettings.set(jobId, opts.settings);
-  jobMeta.set(jobId, {
     originalFilename: opts.originalFilename,
-    sizeBytes: opts.sizeBytes,
-  });
+    settings: opts.settings,
+  };
+
+  await persistJob(record);
 
   pending.push(jobId);
   void drainQueue();
 
   return jobId;
+}
+
+export async function resumePendingUploadJobs(): Promise<void> {
+  await ensureJobsDir();
+  const ids = await listUploadJobIds();
+
+  for (const jobId of ids) {
+    const record = await loadUploadJob(jobId);
+    if (!record) continue;
+
+    jobs.set(jobId, record);
+
+    if (record.status === "done" || record.status === "failed") {
+      continue;
+    }
+
+    const litematicPath = join(UPLOAD_TMP_DIR, `${jobId}.litematic`);
+    let hasFile = false;
+    try {
+      await access(litematicPath);
+      hasFile = true;
+    } catch {
+      hasFile = false;
+    }
+
+    if (!hasFile) {
+      const failed = patchJob(record, {
+        status: "failed",
+        error: "Upload interrupted (server restarted). Please upload the file again.",
+        stage: "failed",
+      });
+      await persistJob(failed);
+      continue;
+    }
+
+    if (record.status === "processing") {
+      const requeued = patchJob(record, {
+        status: "queued",
+        stage: "requeued",
+        progress: 0,
+      });
+      await persistJob(requeued);
+    }
+
+    if (!pending.includes(jobId)) {
+      pending.push(jobId);
+    }
+  }
+
+  if (pending.length > 0) {
+    logger.info({ count: pending.length }, "resuming background upload jobs");
+    void drainQueue();
+  }
 }
 
 async function drainQueue(): Promise<void> {
@@ -79,49 +164,54 @@ async function drainQueue(): Promise<void> {
 }
 
 async function runJob(jobId: string): Promise<void> {
-  const job = jobs.get(jobId);
-  if (!job) return;
+  let record = jobs.get(jobId) ?? (await loadUploadJob(jobId));
+  if (!record) return;
 
   const path = join(UPLOAD_TMP_DIR, `${jobId}.litematic`);
-  job.status = "processing";
-  job.progress = 0;
-  job.stage = "starting";
+
+  record = patchJob(record, {
+    status: "processing",
+    progress: 0,
+    stage: "starting",
+  });
+  await persistJob(record);
 
   const started = Date.now();
-  const settings = jobSettings.get(jobId);
-  const meta = jobMeta.get(jobId);
+  const { settings, originalFilename } = record;
 
   try {
-    if (!settings || !meta) {
-      throw new Error("Missing job metadata");
-    }
-
     const buffer = await readFile(path);
 
     logger.info(
-      { jobId, sizeBytes: buffer.length, name: meta.originalFilename },
+      { jobId, sizeBytes: buffer.length, name: originalFilename },
       "background parse started",
     );
 
     const parsed = await parseLitematic(buffer, settings, (percent, stage) => {
-      job.progress = percent;
-      job.stage = stage;
+      const current = jobs.get(jobId);
+      if (current) void persistProgress(current, percent, stage);
     });
 
-    job.stage = "database";
-    job.progress = 99;
+    record = patchJob(jobs.get(jobId) ?? record, {
+      stage: "database",
+      progress: 99,
+    });
+    await persistJob(record);
 
     const result = await persistParsedUpload(parsed, {
-      sessionId: job.sessionId,
-      originalFilename: meta.originalFilename,
-      sizeBytes: meta.sizeBytes,
+      sessionId: record.sessionId,
+      originalFilename,
+      sizeBytes: record.sizeBytes,
       settings,
     });
 
-    job.status = "done";
-    job.progress = 100;
-    job.stage = "done";
-    job.result = result;
+    record = patchJob(record, {
+      status: "done",
+      progress: 100,
+      stage: "done",
+      result,
+    });
+    await persistJob(record);
 
     logger.info(
       {
@@ -133,12 +223,18 @@ async function runJob(jobId: string): Promise<void> {
       "background parse finished",
     );
   } catch (err) {
-    job.status = "failed";
-    job.error = uploadParseErrorMessage(err);
+    record = patchJob(jobs.get(jobId) ?? record, {
+      status: "failed",
+      error: uploadParseErrorMessage(err),
+      stage: "failed",
+    });
+    await persistJob(record);
     logger.error({ err, jobId, ms: Date.now() - started }, "background parse failed");
   } finally {
-    jobSettings.delete(jobId);
-    jobMeta.delete(jobId);
+    lastProgressWrite.delete(jobId);
     await unlink(path).catch(() => undefined);
+    setTimeout(() => {
+      void deleteUploadJob(jobId);
+    }, 60 * 60 * 1000);
   }
 }

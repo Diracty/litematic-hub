@@ -1,6 +1,7 @@
 import http from "node:http";
 import app from "./app";
 import { logger } from "./lib/logger";
+import { resumePendingUploadJobs } from "./lib/upload-queue.js";
 
 const rawPort = process.env["PORT"];
 
@@ -28,4 +29,7 @@ server.listen(port, (err) => {
   }
 
   logger.info({ port, requestTimeoutMs: server.requestTimeout }, "Server listening");
+  void resumePendingUploadJobs().catch((resumeErr) => {
+    logger.error({ err: resumeErr }, "failed to resume upload jobs");
+  });
 });

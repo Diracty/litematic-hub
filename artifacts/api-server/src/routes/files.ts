@@ -80,10 +80,13 @@ router.get("/upload-limits", (_req, res) => {
   res.json({ maxUploadMb: MAX_LITEMATIC_UPLOAD_MB });
 });
 
-router.get("/upload-jobs/:jobId", (req, res) => {
-  const job = getUploadJob(req.params.jobId);
+router.get("/upload-jobs/:jobId", async (req, res) => {
+  const job = await getUploadJob(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Job not found" });
+    res.status(404).json({
+      error:
+        "Задача не найдена (сервер перезапустился или устарела ссылка). Загрузите файл снова.",
+    });
     return;
   }
   res.json({

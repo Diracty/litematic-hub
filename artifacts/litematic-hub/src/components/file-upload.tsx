@@ -78,6 +78,12 @@ async function pollUploadJob(
     const body = await readJsonBody<UploadJobResponse>(res);
     gatewayRetries = 0;
     if (!res.ok) {
+      if (res.status === 404) {
+        throw new Error(
+          body.error ??
+            "Задача парсинга не найдена (сервер перезапустился). Загрузите файл ещё раз.",
+        );
+      }
       throw new Error(body.error ?? `Job poll failed (${res.status})`);
     }
     if (typeof body.progress === "number") {
