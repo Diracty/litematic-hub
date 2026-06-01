@@ -16,10 +16,18 @@ const needsSsl =
   databaseUrl.includes("sslmode=require") ||
   databaseUrl.includes("neon.tech");
 
+const usePooler =
+  databaseUrl.includes(":6543") || databaseUrl.includes("pooler.supabase.com");
+
 export const pool = new Pool({
   connectionString: databaseUrl,
   ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
 });
-export const db = drizzle(pool, { schema });
+
+/** Transaction pooler (6543) does not support prepared statements. */
+export const db = drizzle(pool, {
+  schema,
+  ...(usePooler ? { prepare: false } : {}),
+});
 
 export * from "./schema";
