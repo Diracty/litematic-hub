@@ -1,11 +1,15 @@
-import { access, readFile, unlink } from "node:fs/promises";
+import { access, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { parseLitematic } from "./litematic-parser.js";
+import { parseLitematicFromPath } from "./litematic-parser.js";
 import type { ParseSettings } from "./litematic/types.js";
 import { logger } from "./logger.js";
 import { persistParsedUpload } from "./persist-parsed.js";
 import { uploadParseErrorMessage } from "./upload-errors.js";
-import { ASYNC_UPLOAD_THRESHOLD_BYTES, UPLOAD_TMP_DIR } from "./upload-limits.js";
+import {
+  ASYNC_UPLOAD_THRESHOLD_BYTES,
+  HOSTING_OOM_HINT,
+  UPLOAD_TMP_DIR,
+} from "./upload-limits.js";
 import {
   deleteUploadJob,
   ensureJobsDir,
@@ -131,13 +135,23 @@ export async function resumePendingUploadJobs(): Promise<void> {
       continue;
     }
 
-    if (record.status === "processing") {
-      const requeued = patchJob(record, {
-        status: "queued",
-        stage: "requeued",
+    let job = record;
+
+    if (job.status === "processing") {
+      const failed = patchJob(job, {
+        status: "failed",
+        error: HOSTING_OOM_HINT,
+        stage: "failed",
         progress: 0,
       });
-      await persistJob(requeued);
+      await persistJob(failed);
+      await unlink(litematicPath).catch(() => undefined);
+      logger.warn({ jobId }, "aborted stale processing job after server restart (OOM prevention)");
+      continue;
+    }
+
+    if (job.status !== "queued") {
+      continue;
     }
 
     if (!pending.includes(jobId)) {
@@ -180,14 +194,12 @@ async function runJob(jobId: string): Promise<void> {
   const { settings, originalFilename } = record;
 
   try {
-    const buffer = await readFile(path);
-
     logger.info(
-      { jobId, sizeBytes: buffer.length, name: originalFilename },
+      { jobId, sizeBytes: record.sizeBytes, name: originalFilename },
       "background parse started",
     );
 
-    const parsed = await parseLitematic(buffer, settings, (percent, stage) => {
+    const parsed = await parseLitematicFromPath(path, settings, (percent, stage) => {
       const current = jobs.get(jobId);
       if (current) void persistProgress(current, percent, stage);
     });

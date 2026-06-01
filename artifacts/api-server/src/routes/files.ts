@@ -9,6 +9,9 @@ import { eq } from "drizzle-orm";
 import { db, litematicFilesTable, litematicPartsTable } from "@workspace/db";
 import { parseLitematic, DEFAULT_SETTINGS, type ParseSettings } from "../lib/litematic-parser";
 import {
+  HOSTING_MAX_UPLOAD_BYTES,
+  HOSTING_MAX_UPLOAD_MB,
+  HOSTING_OOM_HINT,
   MAX_LITEMATIC_UPLOAD_BYTES,
   MAX_LITEMATIC_UPLOAD_MB,
   UPLOAD_TMP_DIR,
@@ -77,7 +80,10 @@ function parseBodySettings(body: Record<string, unknown>): ParseSettings {
 }
 
 router.get("/upload-limits", (_req, res) => {
-  res.json({ maxUploadMb: MAX_LITEMATIC_UPLOAD_MB });
+  res.json({
+    maxUploadMb: MAX_LITEMATIC_UPLOAD_MB,
+    hostingMaxUploadMb: HOSTING_MAX_UPLOAD_MB,
+  });
 });
 
 router.get("/upload-jobs/:jobId", async (req, res) => {
@@ -144,6 +150,14 @@ router.post("/files/upload", uploadSingle, async (req, res) => {
 
   const sessionId = (req.body["sessionId"] as string) || randomUUID();
   const mergedSettings = parseBodySettings(req.body as Record<string, unknown>);
+
+  if (req.file.size > HOSTING_MAX_UPLOAD_BYTES) {
+    await unlink(req.file.path).catch(() => undefined);
+    res.status(413).json({
+      error: `${HOSTING_OOM_HINT} (лимит на сервере: ${HOSTING_MAX_UPLOAD_MB} МБ, файл: ${(req.file.size / (1024 * 1024)).toFixed(1)} МБ)`,
+    });
+    return;
+  }
 
   if (shouldUseAsyncUpload(req.file.size)) {
     const jobId = randomUUID();

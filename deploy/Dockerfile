@@ -27,6 +27,8 @@ ENV STATIC_DIR=/app/public
 # RelaxDev/small VPS often have ~512MB–1GB RAM; 1792MB heap → OOM kill → 502 during parse.
 ENV NODE_OPTIONS="--max-old-space-size=768"
 ENV MAX_LITEMATIC_UPLOAD_MB=100
+# Reject parse above this on small VPS (OOM at ~30MB). Raise when RelaxDev gives more RAM.
+ENV HOSTING_MAX_UPLOAD_MB=25
 
 COPY --from=builder /app/artifacts/api-server/dist /app/api-server/dist
 COPY --from=builder /app/artifacts/litematic-hub/dist/public /app/public

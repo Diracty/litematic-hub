@@ -21,6 +21,8 @@ export type UploadJob = {
 export type UploadJobRecord = UploadJob & {
   originalFilename: string;
   settings: ParseSettings;
+  /** Incremented when server restarts mid-parse; used to avoid OOM crash loops. */
+  crashResumeCount?: number;
 };
 
 const JOBS_DIR = join(UPLOAD_TMP_DIR, "jobs");
@@ -74,7 +76,10 @@ export function toPublicJob(record: UploadJobRecord): UploadJob {
 export function patchJob(
   record: UploadJobRecord,
   patch: Partial<
-    Pick<UploadJobRecord, "status" | "error" | "result" | "progress" | "stage">
+    Pick<
+      UploadJobRecord,
+      "status" | "error" | "result" | "progress" | "stage" | "crashResumeCount"
+    >
   >,
 ): UploadJobRecord {
   return { ...record, ...patch };

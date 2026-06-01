@@ -47,6 +47,16 @@ function reportProgress(
   onProgress?.(Math.min(100, Math.max(0, Math.round(percent))), stage);
 }
 
+export async function parseLitematicFromPath(
+  filePath: string,
+  settings: Partial<ParseSettings> = {},
+  onProgress?: ParseProgressReporter,
+): Promise<ParsedLitematic> {
+  const { readFile } = await import("node:fs/promises");
+  const compressed = await readFile(filePath);
+  return parseLitematic(compressed, settings, onProgress);
+}
+
 export async function parseLitematic(
   buffer: Buffer,
   settings: Partial<ParseSettings> = {},
@@ -55,7 +65,9 @@ export async function parseLitematic(
   const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
 
   reportProgress(onProgress, 2, "decompress");
-  const decompressed = await gunzipAsync(buffer);
+  let compressed: Buffer | null = buffer;
+  const decompressed = await gunzipAsync(compressed);
+  compressed = null;
 
   reportProgress(onProgress, 8, "nbt");
   // Large schematics: BlockStates arrays can be 60MB+; default prismarine limit is ~16MB.
