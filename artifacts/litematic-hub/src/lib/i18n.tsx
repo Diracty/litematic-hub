@@ -24,10 +24,12 @@ const ru = {
 
   // FileUpload
   uploadDropTitle: "Нажмите или перетащите .litematic файл",
-  uploadDropSub: "До 50МБ",
+  uploadDropSub: "До 100 МБ (большие файлы парсятся дольше)",
   uploadCancel: "Отмена",
   uploadConfirm: "Загрузить и распарсить",
   uploadPending: "Загрузка...",
+  uploadParsing: "Парсинг на сервере…",
+  uploadProgress: "Загрузка {pct}%",
   uploadSettingsLabel: "Настройки парсинга",
   uploadLabelMaxCoords: "Макс. координат в части",
   uploadLabelMaxChars: "Макс. символов в части",
@@ -43,7 +45,7 @@ const ru = {
   uploadToastSuccessDesc: "Файл обработан.",
   uploadToastFailTitle: "Ошибка загрузки",
   uploadToastInvalidType: "Поддерживаются только файлы .litematic.",
-  uploadToastTooLarge: "Максимальный размер — 50МБ.",
+  uploadToastTooLarge: "Максимальный размер — 100 МБ.",
   uploadInvalidTypeTitle: "Неверный тип файла",
   uploadTooLargeTitle: "Файл слишком большой",
 
@@ -123,10 +125,12 @@ const en: typeof ru = {
   docsApiPart: "JSON data for a specific part (1-based index)",
 
   uploadDropTitle: "Click or drag .litematic file here",
-  uploadDropSub: "Up to 50MB",
+  uploadDropSub: "Up to 100 MB (large files take longer to parse)",
   uploadCancel: "Cancel",
   uploadConfirm: "Upload & Parse",
   uploadPending: "Uploading...",
+  uploadParsing: "Parsing on server…",
+  uploadProgress: "Upload {pct}%",
   uploadSettingsLabel: "Parse Settings",
   uploadLabelMaxCoords: "Max Coords per Part",
   uploadLabelMaxChars: "Max Chars per Part",
@@ -142,7 +146,7 @@ const en: typeof ru = {
   uploadToastSuccessDesc: "Your litematic file has been processed.",
   uploadToastFailTitle: "Upload failed",
   uploadToastInvalidType: "Only .litematic files are supported.",
-  uploadToastTooLarge: "Maximum file size is 50MB.",
+  uploadToastTooLarge: "Maximum file size is 100 MB.",
   uploadInvalidTypeTitle: "Invalid file type",
   uploadTooLargeTitle: "File too large",
 

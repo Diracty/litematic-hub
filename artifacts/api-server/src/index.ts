@@ -1,3 +1,4 @@
+import http from "node:http";
 import app from "./app";
 import { logger } from "./lib/logger";
 
@@ -15,11 +16,16 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+const server = http.createServer(app);
+/** Large .litematic: gzip + parse + DB can take several minutes on free VPS. */
+server.requestTimeout = 15 * 60 * 1000;
+server.headersTimeout = 16 * 60 * 1000;
+
+server.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
 
-  logger.info({ port }, "Server listening");
+  logger.info({ port, requestTimeoutMs: server.requestTimeout }, "Server listening");
 });

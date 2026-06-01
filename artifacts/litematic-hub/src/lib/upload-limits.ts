@@ -1,0 +1,3 @@
+/** Keep in sync with api-server MAX_LITEMATIC_UPLOAD_MB */
+export const MAX_LITEMATIC_UPLOAD_MB = 100;
+export const MAX_LITEMATIC_UPLOAD_BYTES = MAX_LITEMATIC_UPLOAD_MB * 1024 * 1024;

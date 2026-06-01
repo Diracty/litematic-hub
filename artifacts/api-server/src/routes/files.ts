@@ -1,16 +1,23 @@
 import { Router } from "express";
 import multer from "multer";
+import type { Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, litematicFilesTable, litematicPartsTable } from "@workspace/db";
 import { parseLitematic, DEFAULT_SETTINGS, type ParseSettings } from "../lib/litematic-parser";
 import { logger } from "../lib/logger";
+import {
+  MAX_LITEMATIC_UPLOAD_BYTES,
+  MAX_LITEMATIC_UPLOAD_MB,
+  PARTS_DB_BATCH_SIZE,
+} from "../lib/upload-limits.js";
+import { uploadParseErrorMessage } from "../lib/upload-errors.js";
 
 const router = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: MAX_LITEMATIC_UPLOAD_BYTES },
   fileFilter(_req, file, cb) {
     if (file.originalname.endsWith(".litematic") || file.mimetype === "application/octet-stream") {
       cb(null, true);
@@ -18,6 +25,39 @@ const upload = multer({
       cb(new Error("Only .litematic files allowed"));
     }
   },
+});
+
+function uploadSingle(req: Request, res: Response, next: NextFunction): void {
+  upload.single("file")(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      res.status(413).json({
+        error: `File too large (max ${MAX_LITEMATIC_UPLOAD_MB} MB)`,
+      });
+      return;
+    }
+    next(err);
+  });
+}
+
+async function insertPartsBatched(fileKey: string, parts: string[]): Promise<void> {
+  for (let i = 0; i < parts.length; i += PARTS_DB_BATCH_SIZE) {
+    const slice = parts.slice(i, i + PARTS_DB_BATCH_SIZE);
+    await db.insert(litematicPartsTable).values(
+      slice.map((data, j) => ({
+        fileKey,
+        partNumber: i + j + 1,
+        data,
+      })),
+    );
+  }
+}
+
+router.get("/upload-limits", (_req, res) => {
+  res.json({ maxUploadMb: MAX_LITEMATIC_UPLOAD_MB });
 });
 
 router.get("/files", async (req, res) => {
@@ -57,13 +97,14 @@ router.get("/files", async (req, res) => {
   }
 });
 
-router.post("/files/upload", upload.single("file"), async (req, res) => {
+router.post("/files/upload", uploadSingle, async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "No file uploaded" });
     return;
   }
 
   const sessionId = (req.body["sessionId"] as string) || randomUUID();
+  const started = Date.now();
 
   const settings: Partial<ParseSettings> = {};
   if (req.body["maxCoordsPerPart"]) settings.maxCoordsPerPart = parseInt(req.body["maxCoordsPerPart"]);
@@ -76,6 +117,10 @@ router.post("/files/upload", upload.single("file"), async (req, res) => {
   const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
 
   try {
+    req.log.info(
+      { sizeBytes: req.file.size, name: req.file.originalname },
+      "parse started",
+    );
     const parsed = await parseLitematic(req.file.buffer, mergedSettings);
     const key = randomUUID();
 
@@ -100,16 +145,18 @@ router.post("/files/upload", upload.single("file"), async (req, res) => {
     });
 
     if (parsed.parts.length > 0) {
-      await db.insert(litematicPartsTable).values(
-        parsed.parts.map((data, i) => ({
-          fileKey: key,
-          partNumber: i + 1,
-          data,
-        }))
-      );
+      await insertPartsBatched(key, parsed.parts);
     }
 
-    req.log.info({ key, partCount: parsed.parts.length }, "File uploaded and parsed");
+    req.log.info(
+      {
+        key,
+        partCount: parsed.parts.length,
+        sizeBytes: req.file.size,
+        ms: Date.now() - started,
+      },
+      "File uploaded and parsed",
+    );
 
     res.status(201).json({
       key,
@@ -122,8 +169,11 @@ router.post("/files/upload", upload.single("file"), async (req, res) => {
       regionCount: parsed.regionCount,
     });
   } catch (err) {
-    req.log.error({ err }, "uploadFile parse error");
-    res.status(500).json({ error: "Failed to parse litematic file" });
+    req.log.error(
+      { err, sizeBytes: req.file.size, ms: Date.now() - started },
+      "uploadFile parse error",
+    );
+    res.status(500).json({ error: uploadParseErrorMessage(err) });
   }
 });
 

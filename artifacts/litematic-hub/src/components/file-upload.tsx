@@ -11,6 +11,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
+import { MAX_LITEMATIC_UPLOAD_BYTES } from "@/lib/upload-limits";
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function uploadWithProgress(
+  formData: FormData,
+  onProgress: (pct: number) => void,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/files/upload");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+      }
+    };
+    xhr.onload = () => {
+      let body: { error?: string } = {};
+      try {
+        body = JSON.parse(xhr.responseText) as { error?: string };
+      } catch {
+        /* non-json */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body);
+        return;
+      }
+      reject(new Error(body.error ?? `Upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.ontimeout = () => reject(new Error("Upload timed out"));
+    xhr.timeout = 15 * 60 * 1000;
+    xhr.send(formData);
+  });
+}
 
 interface FileUploadProps {
   sessionId: string;
@@ -20,6 +58,8 @@ export function FileUpload({ sessionId }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "upload" | "parse">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -46,17 +86,17 @@ export function FileUpload({ sessionId }: FileUploadProps) {
       formData.append("blockEntityMode", settings.blockEntityMode.toString());
       formData.append("biomeMode", settings.biomeMode.toString());
 
-      const res = await fetch("/api/files/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error(body.error ?? "Upload failed");
+      setUploadPhase("upload");
+      setUploadPct(0);
+      try {
+        return await uploadWithProgress(formData, (pct) => {
+          setUploadPct(pct);
+          if (pct >= 100) setUploadPhase("parse");
+        });
+      } finally {
+        setUploadPhase("idle");
+        setUploadPct(0);
       }
-
-      return res.json();
     },
     onSuccess: () => {
       setFile(null);
@@ -74,7 +114,7 @@ export function FileUpload({ sessionId }: FileUploadProps) {
       toast({ variant: "destructive", title: t.uploadInvalidTypeTitle, description: t.uploadToastInvalidType });
       return;
     }
-    if (selectedFile.size > 50 * 1024 * 1024) {
+    if (selectedFile.size > MAX_LITEMATIC_UPLOAD_BYTES) {
       toast({ variant: "destructive", title: t.uploadTooLargeTitle, description: t.uploadToastTooLarge });
       return;
     }
@@ -139,14 +179,33 @@ export function FileUpload({ sessionId }: FileUploadProps) {
               </div>
               <div>
                 <h3 className="font-medium text-foreground truncate max-w-[300px]">{file.name}</h3>
-                <p className="text-sm text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+                <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
               </div>
+              {uploadMutation.isPending && (
+                <div className="w-full max-w-xs space-y-1">
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${uploadPhase === "parse" ? 100 : uploadPct}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    {uploadPhase === "parse"
+                      ? t.uploadParsing
+                      : t.uploadProgress.replace("{pct}", String(uploadPct))}
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setFile(null)} disabled={uploadMutation.isPending} data-testid="button-cancel-upload">
                   {t.uploadCancel}
                 </Button>
                 <Button size="sm" onClick={() => uploadMutation.mutate(file)} disabled={uploadMutation.isPending} data-testid="button-confirm-upload">
-                  {uploadMutation.isPending ? t.uploadPending : t.uploadConfirm}
+                  {uploadMutation.isPending
+                    ? uploadPhase === "parse"
+                      ? t.uploadParsing
+                      : t.uploadPending
+                    : t.uploadConfirm}
                 </Button>
               </div>
             </div>
