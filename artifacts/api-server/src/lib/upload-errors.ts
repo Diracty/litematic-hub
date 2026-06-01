@@ -13,8 +13,8 @@ export function uploadParseErrorMessage(err: unknown): string {
     lower.includes("array buffer allocation")
   ) {
     return (
-      "Schematic is too large for server memory. Try chunk mode, fewer entities, " +
-      "or a smaller region."
+      "Не хватило оперативной памяти на сервере. Для файла ~30 МБ: Push последнего кода, " +
+      "полный редеплой, PARSE_HEAP_MB=1200. Крупные файлы парсятся по регионам автоматически."
     );
   }
 

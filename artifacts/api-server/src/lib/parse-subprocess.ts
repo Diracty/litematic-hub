@@ -10,7 +10,7 @@ import { UPLOAD_TMP_DIR } from "./upload-limits.js";
 const workerPath = join(dirname(fileURLToPath(import.meta.url)), "parse-worker-child.mjs");
 
 function parseHeapMb(): number {
-  const n = parseInt(process.env.PARSE_HEAP_MB ?? "1200", 10);
+  const n = parseInt(process.env.PARSE_HEAP_MB ?? "1024", 10);
   return Number.isFinite(n) && n >= 256 ? n : 1200;
 }
 

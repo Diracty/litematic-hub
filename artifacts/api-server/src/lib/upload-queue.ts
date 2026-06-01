@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { runParseInSubprocess } from "./parse-subprocess.js";
 import type { ParseSettings } from "./litematic/types.js";
 import { logger } from "./logger.js";
+import { applyMemorySafeParseSettings } from "./memory-safe-settings.js";
 import { persistParsedUpload } from "./persist-parsed.js";
 import { uploadParseErrorMessage } from "./upload-errors.js";
 import {
@@ -91,7 +92,7 @@ export async function enqueueUploadJob(opts: {
     progress: 0,
     stage: "queued",
     originalFilename: opts.originalFilename,
-    settings: opts.settings,
+    settings: applyMemorySafeParseSettings(opts.sizeBytes, opts.settings),
   };
 
   await persistJob(record);

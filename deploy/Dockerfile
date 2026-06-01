@@ -26,7 +26,7 @@ ENV PORT=8080
 ENV STATIC_DIR=/app/public
 ENV MAX_LITEMATIC_UPLOAD_MB=100
 # Background parse worker heap (parent API stays small). Tune on RelaxDev if OOM persists.
-ENV PARSE_HEAP_MB=1200
+ENV PARSE_HEAP_MB=1024
 ENV HOSTING_MAX_UPLOAD_MB=0
 
 COPY --from=builder /app/artifacts/api-server/dist /app/api-server/dist
