@@ -1,6 +1,11 @@
 import nbt from "prismarine-nbt";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdtemp, readFile, rm, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { gunzip } from "node:zlib";
+import { createGunzip, gunzip } from "node:zlib";
 import type { NbtCompound, NbtTag } from "../nbt/types.js";
 import {
   getCompound,
@@ -47,33 +52,56 @@ function reportProgress(
   onProgress?.(Math.min(100, Math.max(0, Math.round(percent))), stage);
 }
 
+async function gunzipFileToPath(srcPath: string, destPath: string): Promise<void> {
+  await pipeline(createReadStream(srcPath), createGunzip(), createWriteStream(destPath));
+}
+
 export async function parseLitematicFromPath(
   filePath: string,
   settings: Partial<ParseSettings> = {},
   onProgress?: ParseProgressReporter,
 ): Promise<ParsedLitematic> {
-  const { readFile } = await import("node:fs/promises");
-  const compressed = await readFile(filePath);
-  return parseLitematic(compressed, settings, onProgress);
+  const workDir = await mkdtemp(join(tmpdir(), "litematic-nbt-"));
+  const decompressedPath = join(workDir, "raw.nbt");
+
+  try {
+    reportProgress(onProgress, 2, "decompress");
+    await gunzipFileToPath(filePath, decompressedPath);
+
+    reportProgress(onProgress, 8, "nbt");
+    let decompressed = await readFile(decompressedPath);
+    await unlink(decompressedPath).catch(() => undefined);
+
+    return await parseLitematicDecompressed(decompressed, settings, onProgress);
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 export async function parseLitematic(
   buffer: Buffer,
   settings: Partial<ParseSettings> = {},
-  onProgress?: ParseProgressReporter
+  onProgress?: ParseProgressReporter,
 ): Promise<ParsedLitematic> {
-  const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
-
   reportProgress(onProgress, 2, "decompress");
   let compressed: Buffer | null = buffer;
   const decompressed = await gunzipAsync(compressed);
   compressed = null;
+  return parseLitematicDecompressed(decompressed, settings, onProgress);
+}
+
+async function parseLitematicDecompressed(
+  decompressed: Buffer,
+  settings: Partial<ParseSettings> = {},
+  onProgress?: ParseProgressReporter,
+): Promise<ParsedLitematic> {
+  const opts: ParseSettings = { ...DEFAULT_SETTINGS, ...settings };
 
   reportProgress(onProgress, 8, "nbt");
-  // Large schematics: BlockStates arrays can be 60MB+; default prismarine limit is ~16MB.
   const root = await nbt.parseUncompressed(decompressed, "big", {
     noArraySizeCheck: true,
   });
+  decompressed.fill(0);
   reportProgress(onProgress, 15, "regions");
 
   const rootCompound = root.value as NbtCompound;
@@ -202,6 +230,8 @@ export async function parseLitematic(
         }
       }
     }
+
+    delete regionsCompound[regionName];
 
     reportProgress(
       onProgress,

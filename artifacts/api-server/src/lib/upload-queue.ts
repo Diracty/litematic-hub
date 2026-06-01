@@ -1,6 +1,6 @@
 import { access, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { parseLitematicFromPath } from "./litematic-parser.js";
+import { runParseInSubprocess } from "./parse-subprocess.js";
 import type { ParseSettings } from "./litematic/types.js";
 import { logger } from "./logger.js";
 import { persistParsedUpload } from "./persist-parsed.js";
@@ -199,7 +199,7 @@ async function runJob(jobId: string): Promise<void> {
       "background parse started",
     );
 
-    const parsed = await parseLitematicFromPath(path, settings, (percent, stage) => {
+    const parsed = await runParseInSubprocess(jobId, (percent, stage) => {
       const current = jobs.get(jobId);
       if (current) void persistProgress(current, percent, stage);
     });

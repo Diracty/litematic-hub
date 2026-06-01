@@ -25,9 +25,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV STATIC_DIR=/app/public
-ENV NODE_OPTIONS="--max-old-space-size=768"
 ENV MAX_LITEMATIC_UPLOAD_MB=100
-ENV HOSTING_MAX_UPLOAD_MB=25
+ENV PARSE_HEAP_MB=1200
+ENV HOSTING_MAX_UPLOAD_MB=0
 
 COPY --from=builder /app/artifacts/api-server/dist /app/api-server/dist
 COPY --from=builder /app/artifacts/litematic-hub/dist/public /app/public
